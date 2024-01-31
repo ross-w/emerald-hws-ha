@@ -1,0 +1,13 @@
+{
+  "domain": "emerald_hws",
+  "name": "Emerald Hot Water System",
+  "codeowners": ["@ross-w"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://www.home-assistant.io/integrations/emerald_hws",
+  "homekit": {},
+  "iot_class": "cloud_push",
+  "requirements": ["emerald_hws==0.0.4"],
+  "ssdp": [],
+  "zeroconf": []
+}
