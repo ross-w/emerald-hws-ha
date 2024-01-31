@@ -1,28 +1,21 @@
-""
+"""Implementation of the Water Heater type for Emerald HWS."""
+
+from .const import DOMAIN
 
 import logging
 import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.components.water_heater import (
     WaterHeaterEntityFeature, WaterHeaterEntity,
     STATE_HEAT_PUMP, STATE_OFF, STATE_PERFORMANCE, STATE_ECO)
 from homeassistant.const import (
     CONF_USERNAME, CONF_PASSWORD, TEMP_CELSIUS, PRECISION_WHOLE)
-from homeassistant.helpers.discovery import load_platform
-from homeassistant.helpers.dispatcher import dispatcher_send
-from homeassistant.helpers.typing import ConfigType, HomeAssistantType
-from datetime import timedelta
-from typing import List
 from emerald_hws.emeraldhws import EmeraldHWS
 
 _LOGGER = logging.getLogger(__name__)
-
-from .const import DOMAIN
-
 
 PLATFORM_SCHEMA = vol.Schema({
     vol.Required(CONF_USERNAME): cv.string,
@@ -34,6 +27,7 @@ async def async_setup_entry(
     config_entry: config_entries.ConfigEntry,
     async_add_entities,
 ):
+    """Set up the Emerald HWS and populate all units on the account."""
     config = config_entry.data
     username = config.get(CONF_USERNAME)
     password = config.get(CONF_PASSWORD)
@@ -113,7 +107,7 @@ class EmeraldWaterHeater(WaterHeaterEntity):
         return self._target_temperature
 
     @property
-    def operation_list(self) -> List[str]:
+    def operation_list(self) -> list[str]:
         """Return list of possible operation modes."""
         return self._operation_list
 
@@ -123,6 +117,7 @@ class EmeraldWaterHeater(WaterHeaterEntity):
         return TEMP_CELSIUS
 
     def modeToOpState(self, mode):
+        """Return the HASS state given an Emerald internal int state."""
         if mode==1:
             return STATE_HEAT_PUMP
         elif mode==0:
@@ -131,6 +126,7 @@ class EmeraldWaterHeater(WaterHeaterEntity):
             return STATE_ECO
 
     def set_operation_mode(self, operation_mode: str) -> None:
+        """Set the internal state given a HASS state."""
         if self._running:
             if operation_mode == STATE_OFF:
                 self._emerald_hws.turnOff(self._hws_uuid)
@@ -146,13 +142,16 @@ class EmeraldWaterHeater(WaterHeaterEntity):
             self._emerald_hws.setNormalMode(self._hws_uuid)
 
     async def async_set_operation_mode(self, operation_mode):
+        """Schedule the sync function to set the operation mode."""
         await self._hass.async_add_executor_job(self.set_operation_mode, operation_mode)
 
     async def async_turn_on(self):
+        """Turn on the Emerald unit."""
         await self._hass.async_add_executor_job(self._emerald_hws.turnOn, self._hws_uuid)
         #await self._emerald_hws.turnOn(self._hws_uuid)
 
     async def async_turn_off(self):
+        """Turn off the Emerald unit."""
         await self._hass.async_add_executor_job(self._emerald_hws.turnOff, self._hws_uuid)
         #await self._emerald_hws.turnOff(self._hws_uuid)
 

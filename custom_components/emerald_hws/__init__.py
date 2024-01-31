@@ -4,10 +4,7 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.const import CONF_NAME
 from .const import DOMAIN
-from homeassistant.components.water_heater import DOMAIN as WATER_HEATER_DOMAIN
-from homeassistant.helpers import discovery
 
 # TODO List the platforms that you want to support.
 # For your initial PR, limit it to 1 platform.
