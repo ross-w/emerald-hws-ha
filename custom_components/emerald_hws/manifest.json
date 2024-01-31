@@ -9,5 +9,6 @@
   "iot_class": "cloud_push",
   "requirements": ["emerald_hws==0.0.4"],
   "ssdp": [],
+  "version": "0.0.1",
   "zeroconf": []
 }
