@@ -72,6 +72,7 @@ class EmeraldWaterHeater(WaterHeaterEntity):
         ]
         self._attr_icon = "mdi:water-boiler"
         self._attr_precision = PRECISION_WHOLE
+        emerald_hws_instance.replaceCallback(self.update)
 
     @property
     def supported_features(self) -> int:
@@ -155,8 +156,8 @@ class EmeraldWaterHeater(WaterHeaterEntity):
         await self._hass.async_add_executor_job(self._emerald_hws.turnOff, self._hws_uuid)
         #await self._emerald_hws.turnOff(self._hws_uuid)
 
-    async def async_update(self) -> None:
-        """Update the water heater state."""
+    def update(self):
+        """Update with values from HWS."""
         state = self._emerald_hws.getFullStatus(self._hws_uuid)
 
         if state is not None:
@@ -164,3 +165,9 @@ class EmeraldWaterHeater(WaterHeaterEntity):
             self._target_temperature = state.get("last_state").get("temp_set")
             self._running = self._emerald_hws.isOn(self._hws_uuid)
             self._current_mode = self._emerald_hws.currentMode(self._hws_uuid)
+
+        return
+
+    async def async_update(self) -> None:
+        """Update the water heater state."""
+        await self._hass.async_add_executor_job(self.update)
