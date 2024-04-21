@@ -72,7 +72,7 @@ class EmeraldWaterHeater(WaterHeaterEntity):
         ]
         self._attr_icon = "mdi:water-boiler"
         self._attr_precision = PRECISION_WHOLE
-        emerald_hws_instance.replaceCallback(self.update)
+        emerald_hws_instance.replaceCallback(self.update_callback)
 
     @property
     def supported_features(self) -> int:
@@ -128,6 +128,7 @@ class EmeraldWaterHeater(WaterHeaterEntity):
 
     def set_operation_mode(self, operation_mode: str) -> None:
         """Set the internal state given a HASS state."""
+        _LOGGER.info(f"emeraldhws: setting operation mode to {operation_mode}")
         if self._running:
             if operation_mode == STATE_OFF:
                 self._emerald_hws.turnOff(self._hws_uuid)
@@ -156,8 +157,15 @@ class EmeraldWaterHeater(WaterHeaterEntity):
         await self._hass.async_add_executor_job(self._emerald_hws.turnOff, self._hws_uuid)
         #await self._emerald_hws.turnOff(self._hws_uuid)
 
+    def update_callback(self):
+        """Schedules an update within HASS
+        """
+        _LOGGER.info("emeraldhws: callback called")
+        self.schedule_update_ha_state()
+
     def update(self):
         """Update with values from HWS."""
+        _LOGGER.info(f"emeraldhws: updating internal state from module")
         state = self._emerald_hws.getFullStatus(self._hws_uuid)
 
         if state is not None:
