@@ -158,14 +158,13 @@ class EmeraldWaterHeater(WaterHeaterEntity):
         #await self._emerald_hws.turnOff(self._hws_uuid)
 
     def update_callback(self):
-        """Schedules an update within HASS
-        """
+        """Schedules an update within HASS."""
         _LOGGER.info("emeraldhws: callback called")
         self.schedule_update_ha_state()
 
     def update(self):
         """Update with values from HWS."""
-        _LOGGER.info(f"emeraldhws: updating internal state from module")
+        _LOGGER.info("emeraldhws: updating internal state from module")
         state = self._emerald_hws.getFullStatus(self._hws_uuid)
 
         if state is not None:
