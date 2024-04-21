@@ -160,7 +160,7 @@ class EmeraldWaterHeater(WaterHeaterEntity):
     def update_callback(self):
         """Schedules an update within HASS."""
         _LOGGER.info("emeraldhws: callback called")
-        self.schedule_update_ha_state()
+        self.schedule_update_ha_state(True)
 
     def update(self):
         """Update with values from HWS."""
