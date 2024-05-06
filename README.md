@@ -14,16 +14,16 @@ _Integration with [emerald_hws_py](https://github.com/ross-w/emerald_hws_py)._
 
 **This integration will set up the following platforms.**
 
-| Platform | Description                           |
-| -------- | ------------------------------------- |
+| Platform       | Description                                                        |
+| -------------- | ------------------------------------------------------------------ |
 | `water_heater` | Creates a water heater control for all Emerald HWS on your account |
 
 ## Installation
 
 1. Using the tool of choice open the directory (folder) for your HA configuration (where you find `configuration.yaml`).
 1. If you do not have a `custom_components` directory (folder) there, you need to create it.
-1. In the `custom_components` directory (folder) create a new folder called `emerald_hws`.
-1. Download _all_ the files from the `custom_components/emerald_hws/` directory (folder) in this repository.
+1. In the `custom_components` directory (folder) create a new folder called `emeraldenergy`.
+1. Download _all_ the files from the `custom_components/emeraldenergy/` directory (folder) in this repository.
 1. Place the files you downloaded in the new directory (folder) you created.
 1. Restart Home Assistant
 1. In the HA UI go to "Configuration" -> "Integrations" click "+" and search for "Integration blueprint"
@@ -32,12 +32,11 @@ _Integration with [emerald_hws_py](https://github.com/ross-w/emerald_hws_py)._
 
 Please note that to keep things with consistent the following mappings have been used between the Emerald terminology and Home Assistant's
 
-| Emerald | HASS |
-| ------- | ---- |
-| Normal  | Heat Pump |
+| Emerald | HASS        |
+| ------- | ----------- |
+| Normal  | Heat Pump   |
 | Boost   | Performance |
-| Quiet   | Eco |
-
+| Quiet   | Eco         |
 
 <!---->
 
@@ -45,7 +44,8 @@ Please note that to keep things with consistent the following mappings have been
 
 If you want to contribute to this please read the [Contribution guidelines](CONTRIBUTING.md)
 
-***
+---
+
 [license-shield]: https://img.shields.io/github/license/ross-w/emerald-hws-ha
 [commits-shield]: https://img.shields.io/github/commit-activity/y/ross-w/emerald-hws-ha.svg?style=for-the-badge
 [commits]: https://github.com/ross-w/emerald-hws-ha/commits/main

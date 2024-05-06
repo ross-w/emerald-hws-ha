@@ -5,4 +5,4 @@ default_config:
 logger:
   default: info
   logs:
-    custom_components.emerald_hws: debug
+    custom_components.emeraldenergy: debug
