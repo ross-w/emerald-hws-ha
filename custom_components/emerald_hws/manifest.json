@@ -1,5 +1,5 @@
 {
-  "domain": "emerald_hws",
+  "domain": "emeraldenergy",
   "name": "Emerald Hot Water System",
   "codeowners": ["@ross-w"],
   "config_flow": true,
