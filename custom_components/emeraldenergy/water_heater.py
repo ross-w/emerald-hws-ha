@@ -12,7 +12,7 @@ from homeassistant.components.water_heater import (
     WaterHeaterEntityFeature, WaterHeaterEntity,
     STATE_HEAT_PUMP, STATE_OFF, STATE_PERFORMANCE, STATE_ECO)
 from homeassistant.const import (
-    CONF_USERNAME, CONF_PASSWORD, TEMP_CELSIUS, PRECISION_WHOLE)
+    CONF_USERNAME, CONF_PASSWORD, UnitOfTemperature, PRECISION_WHOLE)
 from emerald_hws.emeraldhws import EmeraldHWS
 
 _LOGGER = logging.getLogger(__name__)
@@ -115,7 +115,7 @@ class EmeraldWaterHeater(WaterHeaterEntity):
     @property
     def temperature_unit(self) -> str:
         """Return the temperature unit."""
-        return TEMP_CELSIUS
+        return UnitOfTemperature.CELSIUS
 
     def modeToOpState(self, mode):
         """Return the HASS state given an Emerald internal int state."""
