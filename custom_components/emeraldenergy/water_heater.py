@@ -70,6 +70,7 @@ class EmeraldWaterHeater(WaterHeaterEntity):
             STATE_ECO,
             STATE_OFF,
         ]
+        self._isHeating = emerald_hws_instance.isHeating(hws_uuid)
         self._attr_icon = "mdi:water-boiler"
         self._attr_precision = PRECISION_WHOLE
         emerald_hws_instance.replaceCallback(self.update_callback)
@@ -116,6 +117,11 @@ class EmeraldWaterHeater(WaterHeaterEntity):
     def temperature_unit(self) -> str:
         """Return the temperature unit."""
         return UnitOfTemperature.CELSIUS
+
+    @property
+    def isHeating(self) -> bool:
+        """Return true if the heatpump is heating."""
+        return self._isHeating
 
     def modeToOpState(self, mode):
         """Return the HASS state given an Emerald internal int state."""
