@@ -4,7 +4,7 @@
   "codeowners": ["@ross-w"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://www.home-assistant.io/integrations/emerald_hws",
+  "documentation": "https://github.com/ross-w/emerald-hws-ha/blob/main/README.md",
   "homekit": {},
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/ross-w/emerald-hws-ha/issues",
