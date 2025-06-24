@@ -8,7 +8,7 @@
   "homekit": {},
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/ross-w/emerald-hws-ha/issues",
-  "requirements": ["emerald_hws==0.0.9"],
+  "requirements": ["emerald_hws==0.0.10"],
   "ssdp": [],
   "version": "1.0.1",
   "zeroconf": []
