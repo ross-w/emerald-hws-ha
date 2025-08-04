@@ -12,7 +12,9 @@
             "user": {
                 "data": {
                     "password": "Password for Emerald app",
-                    "username": "Username for Emerald app"
+                    "username": "Username for Emerald app",
+                    "connection_timeout": "Connection timeout in minutes (default: 720)",
+                    "health_check": "Health check interval in minutes (default: 60)"
                 }
             }
         }
