@@ -1,6 +1,12 @@
 """Implementation of the Water Heater type for Emerald HWS."""
 
-from .const import DOMAIN
+from .const import (
+    DOMAIN,
+    CONF_CONNECTION_TIMEOUT,
+    CONF_HEALTH_CHECK,
+    DEFAULT_CONNECTION_TIMEOUT,
+    DEFAULT_HEALTH_CHECK,
+)
 
 import logging
 import voluptuous as vol
@@ -31,9 +37,16 @@ async def async_setup_entry(
     config = config_entry.data
     username = config.get(CONF_USERNAME)
     password = config.get(CONF_PASSWORD)
+    connection_timeout = config.get(CONF_CONNECTION_TIMEOUT, DEFAULT_CONNECTION_TIMEOUT)
+    health_check = config.get(CONF_HEALTH_CHECK, DEFAULT_HEALTH_CHECK)
 
     # Initialize the EmeraldHWS class from the emerald_hws module
-    emerald_hws_instance = EmeraldHWS(username, password)
+    emerald_hws_instance = EmeraldHWS(
+        username,
+        password,
+        connection_timeout_minutes=connection_timeout,
+        health_check_minutes=health_check
+    )
     await hass.async_add_executor_job(emerald_hws_instance.connect)
 
     # Fetch the list of hot water systems (UUIDs)

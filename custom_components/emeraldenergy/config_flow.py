@@ -13,15 +13,22 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 from emerald_hws.emeraldhws import EmeraldHWS
 
-from .const import DOMAIN
+from .const import (
+    DOMAIN,
+    CONF_CONNECTION_TIMEOUT,
+    CONF_HEALTH_CHECK,
+    DEFAULT_CONNECTION_TIMEOUT,
+    DEFAULT_HEALTH_CHECK,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
-# TODO adjust the data schema to the data that you need
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_USERNAME): str,
         vol.Required(CONF_PASSWORD): str,
+        vol.Optional(CONF_CONNECTION_TIMEOUT, default=DEFAULT_CONNECTION_TIMEOUT): int,
+        vol.Optional(CONF_HEALTH_CHECK, default=DEFAULT_HEALTH_CHECK): int,
     }
 )
 
@@ -39,7 +46,12 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     #     your_validate_func, data[CONF_USERNAME], data[CONF_PASSWORD]
     # )
 
-    hws = EmeraldHWS(data[CONF_USERNAME], data[CONF_PASSWORD])
+    hws = EmeraldHWS(
+        data[CONF_USERNAME],
+        data[CONF_PASSWORD],
+        connection_timeout_minutes=data.get(CONF_CONNECTION_TIMEOUT, DEFAULT_CONNECTION_TIMEOUT),
+        health_check_minutes=data.get(CONF_HEALTH_CHECK, DEFAULT_HEALTH_CHECK)
+    )
 
     if not await hass.async_add_executor_job(hws.getLoginToken):
         raise InvalidAuth
