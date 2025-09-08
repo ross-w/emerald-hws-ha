@@ -1,5 +1,5 @@
 colorlog==6.9.0
 homeassistant==2024.1.6
 pip>=21.0,<25.3
-ruff==0.12.10
+ruff==0.12.12
 emerald_hws==0.0.14
