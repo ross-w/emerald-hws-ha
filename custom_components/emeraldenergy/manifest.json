@@ -9,7 +9,7 @@
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/ross-w/emerald-hws-ha/issues",
   "loggers": ["emerald_hws"],
-  "requirements": ["emerald_hws==0.0.22"],
+  "requirements": ["emerald_hws==0.0.23"],
   "ssdp": [],
   "version": "0.0.0",
   "zeroconf": []
