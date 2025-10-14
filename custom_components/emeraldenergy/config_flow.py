@@ -1,4 +1,5 @@
 """Config flow for Emerald Hot Water System integration."""
+
 from __future__ import annotations
 
 import logging
@@ -17,8 +18,10 @@ from .const import (
     DOMAIN,
     CONF_CONNECTION_TIMEOUT,
     CONF_HEALTH_CHECK,
+    CONF_ENABLE_ENERGY_MONITORING,
     DEFAULT_CONNECTION_TIMEOUT,
     DEFAULT_HEALTH_CHECK,
+    DEFAULT_ENABLE_ENERGY_MONITORING,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,6 +32,9 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_PASSWORD): str,
         vol.Optional(CONF_CONNECTION_TIMEOUT, default=DEFAULT_CONNECTION_TIMEOUT): int,
         vol.Optional(CONF_HEALTH_CHECK, default=DEFAULT_HEALTH_CHECK): int,
+        vol.Optional(
+            CONF_ENABLE_ENERGY_MONITORING, default=DEFAULT_ENABLE_ENERGY_MONITORING
+        ): bool,
     }
 )
 
@@ -49,8 +55,10 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     hws = EmeraldHWS(
         data[CONF_USERNAME],
         data[CONF_PASSWORD],
-        connection_timeout_minutes=data.get(CONF_CONNECTION_TIMEOUT, DEFAULT_CONNECTION_TIMEOUT),
-        health_check_minutes=data.get(CONF_HEALTH_CHECK, DEFAULT_HEALTH_CHECK)
+        connection_timeout_minutes=data.get(
+            CONF_CONNECTION_TIMEOUT, DEFAULT_CONNECTION_TIMEOUT
+        ),
+        health_check_minutes=data.get(CONF_HEALTH_CHECK, DEFAULT_HEALTH_CHECK),
     )
 
     if not await hass.async_add_executor_job(hws.getLoginToken):

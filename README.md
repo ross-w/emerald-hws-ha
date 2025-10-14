@@ -14,6 +14,7 @@ _Integration with [emerald_hws_py](https://github.com/ross-w/emerald_hws_py)._
 | Platform       | Description                                                        |
 | -------------- | ------------------------------------------------------------------ |
 | `water_heater` | Creates a water heater control for all Emerald HWS on your account |
+| `sensor`       | Creates daily energy usage sensors for all Emerald HWS on your account (configurable) |
 
 ## Installation
 
@@ -26,6 +27,20 @@ _Integration with [emerald_hws_py](https://github.com/ross-w/emerald_hws_py)._
 1. In the HA UI go to "Configuration" -> "Integrations" click "+" and search for "Integration blueprint"
 
 ## Configuration is done in the UI
+
+The integration setup includes the following options:
+
+- **Username**: Your Emerald HWS account username
+- **Password**: Your Emerald HWS account password
+- **Connection Timeout**: How long to maintain connection (default: 12 hours)
+- **Health Check Interval**: Maximum time expected between updates (default: 1 hour)
+- **Enable Energy Monitoring**: Create energy usage sensors (default: enabled)
+
+### Energy Monitoring
+
+When enabled, the integration creates sensors that track energy usage for each hot water system. These sensors Show cumulative energy usage in kWh for the current day, and automatically reset at midnight. They can be configured in the Home Assistant Energy dashboard.
+
+Please note Emerald only provides hourly energy data.
 
 Please note that to keep things with consistent the following mappings have been used between the Emerald terminology and Home Assistant's
 

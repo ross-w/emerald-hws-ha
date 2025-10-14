@@ -15,18 +15,31 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.components.water_heater import (
-    WaterHeaterEntityFeature, WaterHeaterEntity,
-    STATE_HEAT_PUMP, STATE_OFF, STATE_PERFORMANCE, STATE_ECO)
+    WaterHeaterEntityFeature,
+    WaterHeaterEntity,
+    STATE_HEAT_PUMP,
+    STATE_OFF,
+    STATE_PERFORMANCE,
+    STATE_ECO,
+)
 from homeassistant.const import (
-    CONF_USERNAME, CONF_PASSWORD, UnitOfTemperature, PRECISION_WHOLE)
+    CONF_USERNAME,
+    CONF_PASSWORD,
+    UnitOfTemperature,
+    PRECISION_WHOLE,
+)
 from emerald_hws.emeraldhws import EmeraldHWS
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORM_SCHEMA = vol.Schema({
-    vol.Required(CONF_USERNAME): cv.string,
-    vol.Required(CONF_PASSWORD): cv.string,
-}, extra=vol.ALLOW_EXTRA)
+PLATFORM_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_USERNAME): cv.string,
+        vol.Required(CONF_PASSWORD): cv.string,
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -45,20 +58,30 @@ async def async_setup_entry(
         username,
         password,
         connection_timeout_minutes=connection_timeout,
-        health_check_minutes=health_check
+        health_check_minutes=health_check,
     )
     await hass.async_add_executor_job(emerald_hws_instance.connect)
+
+    # Store the EmeraldHWS instance in hass.data for sensor platform access
+    hass.data.setdefault(DOMAIN, {})
+    if "emerald_instances" not in hass.data[DOMAIN]:
+        hass.data[DOMAIN]["emerald_instances"] = {}
+    hass.data[DOMAIN]["emerald_instances"][config_entry.entry_id] = emerald_hws_instance
 
     # Fetch the list of hot water systems (UUIDs)
     hot_water_systems = await hass.async_add_executor_job(emerald_hws_instance.listHWS)
 
     # Create water heater entities for each hot water system
-    water_heaters = [EmeraldWaterHeater(hass, emerald_hws_instance, hws_uuid) for hws_uuid in hot_water_systems]
+    water_heaters = [
+        EmeraldWaterHeater(hass, emerald_hws_instance, hws_uuid)
+        for hws_uuid in hot_water_systems
+    ]
 
     # Add water heater entities to Home Assistant
     async_add_entities(water_heaters, True)
 
     return True
+
 
 class EmeraldWaterHeater(WaterHeaterEntity):
     """Representation of a water heater."""
@@ -140,11 +163,11 @@ class EmeraldWaterHeater(WaterHeaterEntity):
 
     def modeToOpState(self, mode):
         """Return the HASS state given an Emerald internal int state."""
-        if mode==1:
+        if mode == 1:
             return STATE_HEAT_PUMP
-        elif mode==0:
+        elif mode == 0:
             return STATE_PERFORMANCE
-        elif mode==2:
+        elif mode == 2:
             return STATE_ECO
 
     def set_operation_mode(self, operation_mode: str) -> None:
@@ -170,13 +193,17 @@ class EmeraldWaterHeater(WaterHeaterEntity):
 
     async def async_turn_on(self):
         """Turn on the Emerald unit."""
-        await self._hass.async_add_executor_job(self._emerald_hws.turnOn, self._hws_uuid)
-        #await self._emerald_hws.turnOn(self._hws_uuid)
+        await self._hass.async_add_executor_job(
+            self._emerald_hws.turnOn, self._hws_uuid
+        )
+        # await self._emerald_hws.turnOn(self._hws_uuid)
 
     async def async_turn_off(self):
         """Turn off the Emerald unit."""
-        await self._hass.async_add_executor_job(self._emerald_hws.turnOff, self._hws_uuid)
-        #await self._emerald_hws.turnOff(self._hws_uuid)
+        await self._hass.async_add_executor_job(
+            self._emerald_hws.turnOff, self._hws_uuid
+        )
+        # await self._emerald_hws.turnOff(self._hws_uuid)
 
     def update_callback(self):
         """Schedules an update within HASS."""
