@@ -2,10 +2,6 @@
 
 from .const import (
     DOMAIN,
-    CONF_CONNECTION_TIMEOUT,
-    CONF_HEALTH_CHECK,
-    DEFAULT_CONNECTION_TIMEOUT,
-    DEFAULT_HEALTH_CHECK,
 )
 
 import logging
@@ -28,7 +24,6 @@ from homeassistant.const import (
     UnitOfTemperature,
     PRECISION_WHOLE,
 )
-from emerald_hws.emeraldhws import EmeraldHWS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,33 +42,21 @@ async def async_setup_entry(
     async_add_entities,
 ):
     """Set up the Emerald HWS and populate all units on the account."""
-    config = config_entry.data
-    username = config.get(CONF_USERNAME)
-    password = config.get(CONF_PASSWORD)
-    connection_timeout = config.get(CONF_CONNECTION_TIMEOUT, DEFAULT_CONNECTION_TIMEOUT)
-    health_check = config.get(CONF_HEALTH_CHECK, DEFAULT_HEALTH_CHECK)
+    # Get the shared EmeraldHWS data from hass.data
+    entry_data = hass.data[DOMAIN].get(config_entry.entry_id)
+    if not entry_data:
+        _LOGGER.error("No Emerald HWS data found in hass data")
+        return False
 
-    # Initialize the EmeraldHWS class from the emerald_hws module
-    emerald_hws_instance = EmeraldHWS(
-        username,
-        password,
-        connection_timeout_minutes=connection_timeout,
-        health_check_minutes=health_check,
-    )
-    await hass.async_add_executor_job(emerald_hws_instance.connect)
-
-    # Store the EmeraldHWS instance in hass.data for sensor platform access
-    hass.data.setdefault(DOMAIN, {})
-    if "emerald_instances" not in hass.data[DOMAIN]:
-        hass.data[DOMAIN]["emerald_instances"] = {}
-    hass.data[DOMAIN]["emerald_instances"][config_entry.entry_id] = emerald_hws_instance
+    emerald_hws_instance = entry_data["instance"]
+    callback_dispatcher = entry_data["dispatcher"]
 
     # Fetch the list of hot water systems (UUIDs)
     hot_water_systems = await hass.async_add_executor_job(emerald_hws_instance.listHWS)
 
     # Create water heater entities for each hot water system
     water_heaters = [
-        EmeraldWaterHeater(hass, emerald_hws_instance, hws_uuid)
+        EmeraldWaterHeater(hass, emerald_hws_instance, hws_uuid, callback_dispatcher)
         for hws_uuid in hot_water_systems
     ]
 
@@ -86,11 +69,12 @@ async def async_setup_entry(
 class EmeraldWaterHeater(WaterHeaterEntity):
     """Representation of a water heater."""
 
-    def __init__(self, hass, emerald_hws_instance, hws_uuid):
+    def __init__(self, hass, emerald_hws_instance, hws_uuid, callback_dispatcher):
         """Initialize the water heater."""
         self._emerald_hws = emerald_hws_instance
         self._hass = hass
         self._hws_uuid = hws_uuid
+        self._callback_dispatcher = callback_dispatcher
         gi = emerald_hws_instance.getInfo(hws_uuid)
         status = emerald_hws_instance.getFullStatus(hws_uuid)
         self._serial_number = gi.get("serial_number")
@@ -109,7 +93,8 @@ class EmeraldWaterHeater(WaterHeaterEntity):
         self._is_heating = emerald_hws_instance.isHeating(hws_uuid)
         self._attr_icon = "mdi:water-boiler"
         self._attr_precision = PRECISION_WHOLE
-        emerald_hws_instance.replaceCallback(self.update_callback)
+        # Register with the callback dispatcher instead of directly with the API
+        callback_dispatcher.register_callback(self.update_callback)
 
     @property
     def supported_features(self) -> int:
@@ -226,3 +211,9 @@ class EmeraldWaterHeater(WaterHeaterEntity):
     async def async_update(self) -> None:
         """Update the water heater state."""
         await self._hass.async_add_executor_job(self.update)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Clean up when entity is removed from Home Assistant."""
+        # Unregister from callback dispatcher
+        self._callback_dispatcher.unregister_callback(self.update_callback)
+        await super().async_will_remove_from_hass()

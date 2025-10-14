@@ -34,24 +34,25 @@ async def async_setup_entry(
         _LOGGER.info("Energy monitoring is disabled in configuration")
         return True
 
-    # Get the shared EmeraldHWS instance from water_heater platform data
-    # The instance is stored in hass.data by the water_heater platform
-    emerald_instances = hass.data[DOMAIN].get("emerald_instances", {})
-    if not emerald_instances:
-        _LOGGER.error("No Emerald HWS instances found in hass data")
-        return True
+    # Get the shared EmeraldHWS data from hass.data
+    entry_data = hass.data[DOMAIN].get(config_entry.entry_id)
+    if not entry_data:
+        _LOGGER.error("No Emerald HWS data found in hass data")
+        return False
+
+    emerald_hws_instance = entry_data["instance"]
+    callback_dispatcher = entry_data["dispatcher"]
 
     sensors = []
-    for _entry_id, emerald_hws_instance in emerald_instances.items():
-        # Fetch the list of hot water systems (UUIDs)
-        hot_water_systems = await hass.async_add_executor_job(
-            emerald_hws_instance.listHWS
-        )
+    # Fetch the list of hot water systems (UUIDs)
+    hot_water_systems = await hass.async_add_executor_job(emerald_hws_instance.listHWS)
 
-        # Create energy sensors for each hot water system
-        for hws_uuid in hot_water_systems:
-            sensor = EmeraldEnergySensor(hass, emerald_hws_instance, hws_uuid)
-            sensors.append(sensor)
+    # Create energy sensors for each hot water system
+    for hws_uuid in hot_water_systems:
+        sensor = EmeraldEnergySensor(
+            hass, emerald_hws_instance, hws_uuid, callback_dispatcher
+        )
+        sensors.append(sensor)
 
     # Add energy sensors to Home Assistant
     if sensors:
@@ -65,12 +66,17 @@ class EmeraldEnergySensor(SensorEntity):
     """Representation of an Emerald HWS energy usage sensor."""
 
     def __init__(
-        self, hass: HomeAssistant, emerald_hws_instance: EmeraldHWS, hws_uuid: str
+        self,
+        hass: HomeAssistant,
+        emerald_hws_instance: EmeraldHWS,
+        hws_uuid: str,
+        callback_dispatcher,
     ):
         """Initialize the energy sensor."""
         self._hass = hass
         self._emerald_hws = emerald_hws_instance
         self._hws_uuid = hws_uuid
+        self._callback_dispatcher = callback_dispatcher
         self._attr_name = None
         self._attr_unique_id = None
         self._attr_native_value = None
@@ -99,8 +105,8 @@ class EmeraldEnergySensor(SensorEntity):
             "serial_number": self._serial_number,
         }
 
-        # Register for updates
-        emerald_hws_instance.replaceCallback(self.update_callback)
+        # Register for updates with callback dispatcher
+        callback_dispatcher.register_callback(self.update_callback)
 
         # Initialize energy value
         self.update_energy_value()
@@ -146,3 +152,9 @@ class EmeraldEnergySensor(SensorEntity):
     async def async_update(self) -> None:
         """Update the sensor state asynchronously."""
         await self._hass.async_add_executor_job(self.update)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Clean up when entity is removed from Home Assistant."""
+        # Unregister from callback dispatcher
+        self._callback_dispatcher.unregister_callback(self.update_callback)
+        await super().async_will_remove_from_hass()
