@@ -7,9 +7,15 @@ on:
   push:
     branches:
       - "main"
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
   pull_request:
     branches:
       - "main"
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
 
 jobs:
   hassfest: # https://developers.home-assistant.io/blog/2020/04/16/hassfest
