@@ -24,7 +24,7 @@ _Integration with [emerald_hws_py](https://github.com/ross-w/emerald_hws_py)._
 1. Download _all_ the files from the `custom_components/emeraldenergy/` directory (folder) in this repository.
 1. Place the files you downloaded in the new directory (folder) you created.
 1. Restart Home Assistant
-1. In the HA UI go to "Configuration" -> "Integrations" click "+" and search for "Integration blueprint"
+1. In the HA UI go to "Configuration" -> "Integrations" click "+" and search for "Emerald HWS"
 
 ## Configuration is done in the UI
 
@@ -32,8 +32,8 @@ The integration setup includes the following options:
 
 - **Username**: Your Emerald HWS account username
 - **Password**: Your Emerald HWS account password
-- **Connection Timeout**: How long to maintain connection (default: 12 hours)
-- **Health Check Interval**: Maximum time expected between updates (default: 1 hour)
+- **Connection Timeout**: How long to maintain connection before reconnecting (default: 12 hours)
+- **Health Check Interval**: Maximum time expected between data updates before considering the connection unhealthy (default: 1 hour)
 - **Enable Energy Monitoring**: Create energy usage sensors (default: enabled)
 
 ### Energy Monitoring
@@ -42,13 +42,42 @@ When enabled, the integration creates sensors that track energy usage for each h
 
 Please note Emerald only provides hourly energy data.
 
-Please note that to keep things with consistent the following mappings have been used between the Emerald terminology and Home Assistant's
+## Mapping of Emerald terms to Home Assistant
+
+To keep things consistent, the following mappings have been used between the Emerald terminology and Home Assistant's
 
 | Emerald | HASS        |
 | ------- | ----------- |
 | Normal  | Heat Pump   |
 | Boost   | Performance |
 | Quiet   | Eco         |
+
+## Usage in Automations
+
+This integration provides several attributes that can be used in automations and templates. Here are some examples:
+
+Replace `<serial>` with your water heater's serial number.
+
+To read the current water temperature:
+```yaml
+{{ state_attr("water_heater.emerald_<serial>", "current_temperature") }}
+```
+
+To determine if the water heater is actively heating (not just turned on):
+```yaml
+{{ state_attr('water_heater.emerald_<serial>', "is_heating") }}
+```
+
+## Troubleshooting
+
+### Login Issues
+If you're unable to log in, verify your credentials using the Emerald mobile app or web portal first.
+
+### No Data Appearing
+If the integration connects but no water heater entities appear, check that your Emerald account has active devices and that you have the correct permissions.
+
+### Integration Not Found
+If you can't find "Emerald HWS" in the integrations list after installing via HACS, try restarting Home Assistant again.
 
 <!---->
 
