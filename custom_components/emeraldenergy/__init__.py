@@ -107,7 +107,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        # Clean up stored EmeraldHWS instance
-        hass.data[DOMAIN].pop(entry.entry_id, None)
+        # Clean up stored EmeraldHWS instance and stop MQTT/timers
+        entry_data = hass.data[DOMAIN].pop(entry.entry_id, None)
+        if entry_data:
+            instance = entry_data["instance"]
+            await hass.async_add_executor_job(instance.disconnect)
 
     return unload_ok
