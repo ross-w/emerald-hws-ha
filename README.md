@@ -68,6 +68,16 @@ To determine if the water heater is actively heating (not just turned on):
 {{ state_attr('water_heater.emerald_<serial>', "is_heating") }}
 ```
 
+To read a derived estimate of remaining hot-water tank capacity as a percentage (clamped to 0–100). This is a local calculation from the current and target temperatures — the API does not return it directly, so treat it as indicative only:
+```yaml
+{{ state_attr('water_heater.emerald_<serial>', "tank_capacity_percent") }}
+```
+
+The same value rounded to the nearest 20%, matching the capacity figure shown in the official Emerald app:
+```yaml
+{{ state_attr('water_heater.emerald_<serial>', "tank_capacity_percent_rounded") }}
+```
+
 ## Troubleshooting
 
 ### Login Issues
