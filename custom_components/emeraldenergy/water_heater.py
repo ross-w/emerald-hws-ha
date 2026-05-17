@@ -1,28 +1,28 @@
 """Implementation of the Water Heater type for Emerald HWS."""
 
-from .const import (
-    DOMAIN,
-)
-
 import logging
-import voluptuous as vol
-import homeassistant.helpers.config_validation as cv
 
+import homeassistant.helpers.config_validation as cv
+import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
 from homeassistant.components.water_heater import (
-    WaterHeaterEntityFeature,
-    WaterHeaterEntity,
+    STATE_ECO,
     STATE_HEAT_PUMP,
     STATE_OFF,
     STATE_PERFORMANCE,
-    STATE_ECO,
+    WaterHeaterEntity,
+    WaterHeaterEntityFeature,
 )
 from homeassistant.const import (
-    CONF_USERNAME,
     CONF_PASSWORD,
-    UnitOfTemperature,
+    CONF_USERNAME,
     PRECISION_WHOLE,
+    UnitOfTemperature,
+)
+from homeassistant.core import HomeAssistant
+
+from .const import (
+    DOMAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -148,6 +148,9 @@ class EmeraldWaterHeater(WaterHeaterEntity):
         current = self._current_temperature
         target = self._target_temperature
         if current is not None and target is not None:
+            # Tank capacity is not returned by the API; derive it the same way the
+            # Emerald app does: each degree below target costs ~2.3% capacity, and
+            # the app displays the result snapped to the nearest 20% step.
             raw = 100 - 2.3 * (target - current)
             clamped = max(0.0, min(100.0, raw))
             attrs["tank_capacity_percent"] = int(round(clamped))
