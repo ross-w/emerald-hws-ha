@@ -141,9 +141,18 @@ class EmeraldWaterHeater(WaterHeaterEntity):
 
     @property
     def extra_state_attributes(self):
-        """Return the isHeating property as an attribute."""
+        """Return additional state attributes."""
         attrs = super().extra_state_attributes or {}
         attrs["is_heating"] = self._is_heating
+
+        current = self._current_temperature
+        target = self._target_temperature
+        if current is not None and target is not None:
+            raw = 100 - 2.3 * (target - current)
+            clamped = max(0.0, min(100.0, raw))
+            attrs["tank_capacity_percent"] = int(round(clamped))
+            attrs["tank_capacity_percent_rounded"] = int(round(clamped / 20) * 20)
+
         return attrs
 
     def modeToOpState(self, mode):
