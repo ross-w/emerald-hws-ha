@@ -89,6 +89,11 @@ If the integration connects but no water heater entities appear, check that your
 ### Integration Not Found
 If you can't find "Emerald HWS" in the integrations list after installing via HACS, try restarting Home Assistant again.
 
+### Error: "function takes exactly 43 arguments (45 given)"
+A "function takes exactly N arguments" error during setup means the installed `awscrt` package is inconsistent (perhaps an interrupted upgrade?)
+- Depending on your install method, try recreating the Docker container, update HAOS, or remove and re-add the integration.
+- If that fails, force a clean reinstall, then restart Home Assistant: `pip install --force-reinstall --no-cache-dir awscrt` (run it where HA's Python lives: the SSH/Terminal add-on, `docker exec` into the container, or your activated venv).
+
 <!---->
 
 ## Contributions are welcome
