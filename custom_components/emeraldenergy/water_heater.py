@@ -203,8 +203,19 @@ class EmeraldWaterHeater(WaterHeaterEntity):
         # await self._emerald_hws.turnOff(self._hws_uuid)
 
     def update_callback(self):
-        """Schedules an update within HASS."""
+        """Schedules an update within HASS (called from the module's thread)."""
         _LOGGER.info("emeraldhws: callback called")
+        if self.hass is None:
+            # The emerald_hws MQTT thread can fire callbacks before the entity
+            # is added to HASS (or after removal). schedule_update_ha_state is
+            # thread-safe, but with self.hass is None it would raise
+            # "'NoneType' object has no attribute 'create_task'".
+            _LOGGER.debug(
+                "Dropping callback for %s; hass not set (entity not added yet "
+                "or already removed)",
+                self._name,
+            )
+            return
         self.schedule_update_ha_state(True)
 
     def update(self):

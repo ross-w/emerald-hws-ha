@@ -117,8 +117,19 @@ class EmeraldEnergySensor(SensorEntity):
         return self._last_reset
 
     def update_callback(self):
-        """Schedules an update within HASS when data changes."""
+        """Schedules an update within HASS when data changes (module thread)."""
         _LOGGER.debug(f"Energy sensor callback for {self._attr_name}")
+        if self.hass is None:
+            # The emerald_hws MQTT thread can fire callbacks before the entity
+            # is added to HASS (or after removal). schedule_update_ha_state is
+            # thread-safe, but with self.hass is None it would raise
+            # "'NoneType' object has no attribute 'create_task'".
+            _LOGGER.debug(
+                "Dropping callback for %s; hass not set (entity not added yet "
+                "or already removed)",
+                self._attr_name,
+            )
+            return
         self.schedule_update_ha_state(True)
 
     def update_energy_value(self):

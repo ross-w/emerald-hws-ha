@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import logging
+
+from emerald_hws.emeraldhws import EmeraldHWS
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from emerald_hws.emeraldhws import EmeraldHWS
 
 from .const import (
-    DOMAIN,
     CONF_CONNECTION_TIMEOUT,
     CONF_HEALTH_CHECK,
+    CONF_PASSWORD,
+    CONF_USERNAME,
     DEFAULT_CONNECTION_TIMEOUT,
     DEFAULT_HEALTH_CHECK,
-    CONF_USERNAME,
-    CONF_PASSWORD,
+    DOMAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,8 +55,8 @@ class CallbackDispatcher:
         for callback in self._callbacks:
             try:
                 callback()
-            except Exception as e:
-                _LOGGER.error(f"Error in callback: {e}")
+            except Exception:
+                _LOGGER.exception("Error in callback %r", callback)
 
     def __call__(self):
         """Make the dispatcher callable."""
