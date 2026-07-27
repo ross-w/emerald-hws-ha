@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from functools import partial
+from collections.abc import Mapping
+from typing import Any
 
 from emerald_hws.emeraldhws import EmeraldHWS
 from homeassistant.config_entries import ConfigEntry
@@ -11,15 +12,8 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from .const import (
-    CONF_CONNECTION_TIMEOUT,
-    CONF_HEALTH_CHECK,
-    CONF_PASSWORD,
-    CONF_USERNAME,
-    DEFAULT_CONNECTION_TIMEOUT,
-    DEFAULT_HEALTH_CHECK,
-    DOMAIN,
-)
+from .const import DOMAIN
+from .helpers import create_hws
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -65,30 +59,26 @@ class CallbackDispatcher:
         self.dispatch()
 
 
+def _create_and_connect(config: Mapping[str, Any]) -> EmeraldHWS:
+    """Build an EmeraldHWS client and open its connection.
+
+    Blocking, and both halves reach into awsiotsdk/awscrt, so they run as a single
+    executor job rather than two.
+    """
+    instance = create_hws(config)
+    instance.connect()
+    return instance
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Emerald Hot Water System from a config entry."""
-    config = entry.data
-    username = config.get(CONF_USERNAME)
-    password = config.get(CONF_PASSWORD)
-    connection_timeout = config.get(CONF_CONNECTION_TIMEOUT, DEFAULT_CONNECTION_TIMEOUT)
-    health_check = config.get(CONF_HEALTH_CHECK, DEFAULT_HEALTH_CHECK)
-
     hass.data.setdefault(DOMAIN, {})
 
     # Create and store the EmeraldHWS instance for shared access
     try:
-        # Constructing EmeraldHWS reaches into awsiotsdk/awscrt, which imports a
-        # compiled extension and does blocking work, so build it in the executor too.
         emerald_hws_instance = await hass.async_add_executor_job(
-            partial(
-                EmeraldHWS,
-                username,
-                password,
-                connection_timeout_minutes=connection_timeout,
-                health_check_minutes=health_check,
-            )
+            _create_and_connect, entry.data
         )
-        await hass.async_add_executor_job(emerald_hws_instance.connect)
 
         # Create and store callback dispatcher for this instance
         callback_dispatcher = CallbackDispatcher()

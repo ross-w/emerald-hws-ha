@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from functools import partial
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -13,7 +13,6 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
-from emerald_hws.emeraldhws import EmeraldHWS
 
 from .const import (
     DOMAIN,
@@ -24,6 +23,7 @@ from .const import (
     DEFAULT_HEALTH_CHECK,
     DEFAULT_ENABLE_ENERGY_MONITORING,
 )
+from .helpers import create_hws
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,34 +40,21 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 
+def _create_and_login(config: Mapping[str, Any]) -> bool:
+    """Build an EmeraldHWS client and check the credentials are accepted.
+
+    Blocking, and both halves reach into awsiotsdk/awscrt, so they run as a single
+    executor job rather than two.
+    """
+    return bool(create_hws(config).getLoginToken())
+
+
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect.
 
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
-    # TODO validate the data can be used to set up a connection.
-
-    # If your PyPI package is not built with async, pass your methods
-    # to the executor:
-    # await hass.async_add_executor_job(
-    #     your_validate_func, data[CONF_USERNAME], data[CONF_PASSWORD]
-    # )
-
-    # Constructing EmeraldHWS reaches into awsiotsdk/awscrt, which imports a compiled
-    # extension and does blocking work, so build it in the executor too.
-    hws = await hass.async_add_executor_job(
-        partial(
-            EmeraldHWS,
-            data[CONF_USERNAME],
-            data[CONF_PASSWORD],
-            connection_timeout_minutes=data.get(
-                CONF_CONNECTION_TIMEOUT, DEFAULT_CONNECTION_TIMEOUT
-            ),
-            health_check_minutes=data.get(CONF_HEALTH_CHECK, DEFAULT_HEALTH_CHECK),
-        )
-    )
-
-    if not await hass.async_add_executor_job(hws.getLoginToken):
+    if not await hass.async_add_executor_job(_create_and_login, data):
         raise InvalidAuth
 
     # If you cannot connect:
