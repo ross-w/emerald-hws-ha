@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from functools import partial
 from typing import Any
 
 import voluptuous as vol
@@ -52,13 +53,18 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     #     your_validate_func, data[CONF_USERNAME], data[CONF_PASSWORD]
     # )
 
-    hws = EmeraldHWS(
-        data[CONF_USERNAME],
-        data[CONF_PASSWORD],
-        connection_timeout_minutes=data.get(
-            CONF_CONNECTION_TIMEOUT, DEFAULT_CONNECTION_TIMEOUT
-        ),
-        health_check_minutes=data.get(CONF_HEALTH_CHECK, DEFAULT_HEALTH_CHECK),
+    # Constructing EmeraldHWS reaches into awsiotsdk/awscrt, which imports a compiled
+    # extension and does blocking work, so build it in the executor too.
+    hws = await hass.async_add_executor_job(
+        partial(
+            EmeraldHWS,
+            data[CONF_USERNAME],
+            data[CONF_PASSWORD],
+            connection_timeout_minutes=data.get(
+                CONF_CONNECTION_TIMEOUT, DEFAULT_CONNECTION_TIMEOUT
+            ),
+            health_check_minutes=data.get(CONF_HEALTH_CHECK, DEFAULT_HEALTH_CHECK),
+        )
     )
 
     if not await hass.async_add_executor_job(hws.getLoginToken):

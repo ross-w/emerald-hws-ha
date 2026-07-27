@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
+from functools import partial
 
 from emerald_hws.emeraldhws import EmeraldHWS
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
     CONF_CONNECTION_TIMEOUT,
@@ -75,11 +77,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Create and store the EmeraldHWS instance for shared access
     try:
-        emerald_hws_instance = EmeraldHWS(
-            username,
-            password,
-            connection_timeout_minutes=connection_timeout,
-            health_check_minutes=health_check,
+        # Constructing EmeraldHWS reaches into awsiotsdk/awscrt, which imports a
+        # compiled extension and does blocking work, so build it in the executor too.
+        emerald_hws_instance = await hass.async_add_executor_job(
+            partial(
+                EmeraldHWS,
+                username,
+                password,
+                connection_timeout_minutes=connection_timeout,
+                health_check_minutes=health_check,
+            )
         )
         await hass.async_add_executor_job(emerald_hws_instance.connect)
 
@@ -96,9 +103,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "Emerald HWS API instance and callback dispatcher created and stored"
         )
 
-    except Exception as e:
-        _LOGGER.error(f"Failed to create Emerald HWS API instance: {e}")
-        return False
+    except Exception as err:
+        # emerald_hws raises bare Exceptions, and its awsiotsdk/awscrt stack can fail
+        # in ways only the traceback identifies (e.g. a straddled awscrt install left
+        # by an interrupted upgrade), so log the full trace rather than just the
+        # message, and let HA retry instead of failing the entry permanently.
+        _LOGGER.exception("Failed to create Emerald HWS API instance")
+        raise ConfigEntryNotReady(
+            f"Failed to connect to the Emerald cloud: {err}"
+        ) from err
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
