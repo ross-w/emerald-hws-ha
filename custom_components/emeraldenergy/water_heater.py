@@ -20,12 +20,39 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
     DOMAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _call_hws(action: str, func, *args) -> None:
+    """Run a blocking emerald_hws control call, translating failures for HASS.
+
+    Control commands are MQTT publishes that block until the broker acknowledges
+    them. If the connection to the Emerald cloud has dropped, the publish is
+    queued rather than delivered and the call raises TimeoutError after 20
+    seconds. Let that surface as a HomeAssistantError so the service call fails
+    cleanly instead of logging an unexpected-error traceback.
+    """
+    try:
+        func(*args)
+    except TimeoutError as err:
+        raise HomeAssistantError(
+            f"Timed out sending '{action}' to the Emerald hot water system. "
+            "The connection to the Emerald cloud may be down; the command was "
+            "not applied."
+        ) from err
+    except Exception as err:
+        # emerald_hws raises bare Exceptions for an unknown unit or a missing
+        # MQTT client, so there is no narrower type to catch here.
+        raise HomeAssistantError(
+            f"Failed to send '{action}' to the Emerald hot water system: {err}"
+        ) from err
+
 
 PLATFORM_SCHEMA = vol.Schema(
     {
@@ -172,17 +199,17 @@ class EmeraldWaterHeater(WaterHeaterEntity):
         _LOGGER.info(f"emeraldhws: setting operation mode to {operation_mode}")
         if self._running:
             if operation_mode == STATE_OFF:
-                self._emerald_hws.turnOff(self._hws_uuid)
+                _call_hws("turn off", self._emerald_hws.turnOff, self._hws_uuid)
         else:
             if operation_mode != STATE_OFF:
-                self._emerald_hws.turnOn(self._hws_uuid)
+                _call_hws("turn on", self._emerald_hws.turnOn, self._hws_uuid)
 
         if operation_mode == STATE_PERFORMANCE:
-            self._emerald_hws.setBoostMode(self._hws_uuid)
+            _call_hws("boost mode", self._emerald_hws.setBoostMode, self._hws_uuid)
         if operation_mode == STATE_ECO:
-            self._emerald_hws.setQuietMode(self._hws_uuid)
+            _call_hws("quiet mode", self._emerald_hws.setQuietMode, self._hws_uuid)
         if operation_mode == STATE_HEAT_PUMP:
-            self._emerald_hws.setNormalMode(self._hws_uuid)
+            _call_hws("normal mode", self._emerald_hws.setNormalMode, self._hws_uuid)
 
     async def async_set_operation_mode(self, operation_mode):
         """Schedule the sync function to set the operation mode."""
@@ -191,16 +218,14 @@ class EmeraldWaterHeater(WaterHeaterEntity):
     async def async_turn_on(self):
         """Turn on the Emerald unit."""
         await self._hass.async_add_executor_job(
-            self._emerald_hws.turnOn, self._hws_uuid
+            _call_hws, "turn on", self._emerald_hws.turnOn, self._hws_uuid
         )
-        # await self._emerald_hws.turnOn(self._hws_uuid)
 
     async def async_turn_off(self):
         """Turn off the Emerald unit."""
         await self._hass.async_add_executor_job(
-            self._emerald_hws.turnOff, self._hws_uuid
+            _call_hws, "turn off", self._emerald_hws.turnOff, self._hws_uuid
         )
-        # await self._emerald_hws.turnOff(self._hws_uuid)
 
     def update_callback(self):
         """Schedules an update within HASS (called from the module's thread)."""
