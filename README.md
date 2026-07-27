@@ -89,6 +89,13 @@ If the integration connects but no water heater entities appear, check that your
 ### Integration Not Found
 If you can't find "Emerald HWS" in the integrations list after installing via HACS, try restarting Home Assistant again.
 
+### Error: "Timed out sending '...' to the Emerald hot water system"
+Control commands are sent over MQTT and block until the Emerald cloud acknowledges them. This error means that acknowledgement never arrived within 20 seconds, so the command was **not** applied — the unit will not have changed state. It usually indicates the connection to the Emerald cloud has dropped, even though Home Assistant still holds an apparently open session.
+
+- If it happens occasionally, the automation or script that triggered it can simply be retried.
+- If it happens regularly, lower **Health Check Interval** (and, if needed, **Connection Timeout**) in the integration options — see [Configuration](#configuration-is-done-in-the-ui). A shorter health check makes the integration notice and rebuild a stale connection sooner.
+- Reloading the integration forces an immediate reconnect.
+
 ### Error: "function takes exactly 43 arguments (45 given)"
 A "function takes exactly N arguments" error during setup means the installed `awscrt` package is inconsistent (perhaps an interrupted upgrade?)
 - Depending on your install method, try recreating the Docker container, update HAOS, or remove and re-add the integration.
