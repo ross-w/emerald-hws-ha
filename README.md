@@ -96,9 +96,16 @@ Control commands are sent over MQTT and block until the Emerald cloud acknowledg
 - If it happens regularly, lower **Health Check Interval** (and, if needed, **Connection Timeout**) in the integration options — see [Configuration](#configuration-is-done-in-the-ui). A shorter health check makes the integration notice and rebuild a stale connection sooner.
 - Reloading the integration forces an immediate reconnect.
 
-### Error: "function takes exactly 43 arguments (45 given)"
-A "function takes exactly N arguments" error during setup means the installed `awscrt` package is inconsistent (perhaps an interrupted upgrade?)
-- Depending on your install method, try recreating the Docker container, update HAOS, or remove and re-add the integration.
+### Errors mentioning `awscrt` during setup
+Setup failures such as:
+
+- `function takes exactly 43 arguments (45 given)`
+- `'ClientTlsContext' object has no attribute '_certificate_source'`
+
+all mean the same thing: the installed `awscrt` package is a mix of two versions (perhaps an interrupted upgrade?). `awscrt` is a compiled extension whose Python files and native library have to match, and it gets upgraded automatically whenever `awsiotsdk` moves. Home Assistant only checks the top-level version pin, so a partially applied upgrade goes unnoticed on later restarts.
+
+- Restarting Home Assistant a second time often clears it, because the next process loads a consistent copy from disk.
+- If it persists, depending on your install method, try recreating the Docker container, update HAOS, or remove and re-add the integration.
 - If that fails, force a clean reinstall, then restart Home Assistant: `pip install --force-reinstall --no-cache-dir awscrt` (run it where HA's Python lives: the SSH/Terminal add-on, `docker exec` into the container, or your activated venv).
 
 <!---->
