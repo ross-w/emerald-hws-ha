@@ -79,20 +79,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         emerald_hws_instance = await hass.async_add_executor_job(
             _create_and_connect, entry.data
         )
-
-        # Create and store callback dispatcher for this instance
-        callback_dispatcher = CallbackDispatcher()
-        emerald_hws_instance.replaceCallback(callback_dispatcher)
-
-        # Store both the instance and dispatcher for platforms to access
-        hass.data[DOMAIN][entry.entry_id] = {
-            "instance": emerald_hws_instance,
-            "dispatcher": callback_dispatcher,
-        }
-        _LOGGER.info(
-            "Emerald HWS API instance and callback dispatcher created and stored"
-        )
-
     except Exception as err:
         # emerald_hws raises bare Exceptions, and its awsiotsdk/awscrt stack can fail
         # in ways only the traceback identifies, so log the full trace rather than
@@ -113,7 +99,46 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             f"Failed to connect to the Emerald cloud: {err}"
         ) from err
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Past this point the instance holds a live MQTT connection with its own threads
+    # and timers, so anything that fails has to hand it back before HA retries setup.
+    try:
+        # Create and store callback dispatcher for this instance
+        callback_dispatcher = CallbackDispatcher()
+        emerald_hws_instance.replaceCallback(callback_dispatcher)
+
+        # Store both the instance and dispatcher for platforms to access
+        hass.data[DOMAIN][entry.entry_id] = {
+            "instance": emerald_hws_instance,
+            "dispatcher": callback_dispatcher,
+        }
+        _LOGGER.info(
+            "Emerald HWS API instance and callback dispatcher created and stored"
+        )
+
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except BaseException:
+        # BaseException, not Exception: HA cancels in-flight setup tasks on shutdown
+        # and when a reload races setup, and CancelledError would otherwise skip the
+        # disconnect below and strand the MQTT threads. Nothing is swallowed -- the
+        # bare raise at the end re-raises whatever arrived, cancellation included.
+        _LOGGER.warning(
+            "Emerald HWS setup did not complete after the connection was "
+            "established; disconnecting so nothing is left holding MQTT threads"
+        )
+        # Nothing in this block may raise: hass.data[DOMAIN] is set up above, but a
+        # subscript here would mask the real failure if that ever stopped holding.
+        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        try:
+            # The executor job is submitted as soon as this is called, so disconnect
+            # still runs on its thread even if cancellation interrupts the await.
+            await hass.async_add_executor_job(emerald_hws_instance.disconnect)
+        except Exception:
+            # Cleanup must never replace the failure that triggered it, so this is
+            # logged and swallowed; the bare raise below re-raises the real cause.
+            _LOGGER.exception(
+                "Failed to disconnect the Emerald HWS instance during cleanup"
+            )
+        raise
 
     return True
 
