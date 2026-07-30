@@ -117,8 +117,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except Exception:
+        _LOGGER.warning(
+            "Emerald HWS setup failed after the connection was established; "
+            "disconnecting so the retry does not leave MQTT threads behind"
+        )
         hass.data[DOMAIN].pop(entry.entry_id, None)
-        await hass.async_add_executor_job(emerald_hws_instance.disconnect)
+        try:
+            await hass.async_add_executor_job(emerald_hws_instance.disconnect)
+        except Exception:
+            # Cleanup must never replace the failure that triggered it, so this is
+            # logged and swallowed; the bare raise below re-raises the real cause.
+            _LOGGER.exception(
+                "Failed to disconnect the Emerald HWS instance during cleanup"
+            )
         raise
 
     return True

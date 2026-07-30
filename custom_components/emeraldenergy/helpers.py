@@ -49,7 +49,7 @@ def _raised_inside_awscrt(err: BaseException) -> bool:
     while tb is not None:
         module = tb.tb_frame.f_globals.get("__name__")
         if module is not None:
-            if module.split(".")[0] == "awscrt":
+            if module == "awscrt" or module.startswith("awscrt."):
                 return True
         elif "awscrt" in PurePath(tb.tb_frame.f_code.co_filename).parts:
             return True
