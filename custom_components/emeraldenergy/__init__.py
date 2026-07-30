@@ -10,10 +10,10 @@ from emerald_hws.emeraldhws import EmeraldHWS
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 
 from .const import DOMAIN
-from .helpers import create_hws
+from .helpers import create_hws, is_awscrt_straddle_error
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -95,10 +95,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     except Exception as err:
         # emerald_hws raises bare Exceptions, and its awsiotsdk/awscrt stack can fail
-        # in ways only the traceback identifies (e.g. a straddled awscrt install left
-        # by an interrupted upgrade), so log the full trace rather than just the
-        # message, and let HA retry instead of failing the entry permanently.
+        # in ways only the traceback identifies, so log the full trace rather than
+        # just the message.
         _LOGGER.exception("Failed to create Emerald HWS API instance")
+        if is_awscrt_straddle_error(err):
+            # Unrecoverable until Home Assistant restarts, so fail permanently
+            # with the remedy rather than looping. See is_awscrt_straddle_error.
+            raise ConfigEntryError(
+                "The installed awscrt package is a mix of two versions, so the "
+                "connection to the Emerald cloud cannot be established in this "
+                "Home Assistant process. Restart Home Assistant to clear it. See "
+                "the integration README section 'Errors mentioning awscrt during "
+                f"setup' if it persists. Underlying error: {err}"
+            ) from err
+        # Anything else is assumed transient, so let HA retry with backoff.
         raise ConfigEntryNotReady(
             f"Failed to connect to the Emerald cloud: {err}"
         ) from err
