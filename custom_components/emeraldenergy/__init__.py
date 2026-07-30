@@ -79,20 +79,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         emerald_hws_instance = await hass.async_add_executor_job(
             _create_and_connect, entry.data
         )
-
-        # Create and store callback dispatcher for this instance
-        callback_dispatcher = CallbackDispatcher()
-        emerald_hws_instance.replaceCallback(callback_dispatcher)
-
-        # Store both the instance and dispatcher for platforms to access
-        hass.data[DOMAIN][entry.entry_id] = {
-            "instance": emerald_hws_instance,
-            "dispatcher": callback_dispatcher,
-        }
-        _LOGGER.info(
-            "Emerald HWS API instance and callback dispatcher created and stored"
-        )
-
     except Exception as err:
         # emerald_hws raises bare Exceptions, and its awsiotsdk/awscrt stack can fail
         # in ways only the traceback identifies, so log the full trace rather than
@@ -113,7 +99,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             f"Failed to connect to the Emerald cloud: {err}"
         ) from err
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Past this point the instance holds a live MQTT connection with its own threads
+    # and timers, so anything that fails has to hand it back before HA retries setup.
+    try:
+        # Create and store callback dispatcher for this instance
+        callback_dispatcher = CallbackDispatcher()
+        emerald_hws_instance.replaceCallback(callback_dispatcher)
+
+        # Store both the instance and dispatcher for platforms to access
+        hass.data[DOMAIN][entry.entry_id] = {
+            "instance": emerald_hws_instance,
+            "dispatcher": callback_dispatcher,
+        }
+        _LOGGER.info(
+            "Emerald HWS API instance and callback dispatcher created and stored"
+        )
+
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except Exception:
+        hass.data[DOMAIN].pop(entry.entry_id, None)
+        await hass.async_add_executor_job(emerald_hws_instance.disconnect)
+        raise
 
     return True
 

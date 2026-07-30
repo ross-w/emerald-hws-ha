@@ -18,13 +18,34 @@ from .const import (
 )
 
 
-# A compiled awscrt function rejecting its own wrapper's call, e.g.
-# "function takes exactly 43 arguments (45 given)". This is the C-extension
-# wording; a pure-Python arity error reads "takes N positional arguments but M
-# were given" instead, so this does not match ordinary bugs in our own code.
+# A compiled function rejecting its caller's argument count, e.g. "function takes
+# exactly 43 arguments (45 given)". Both wordings below come from CPython's C API
+# (PyArg_ParseTuple and argument clinic respectively); a pure-Python arity error
+# reads "takes N positional arguments but M were given" instead. Small counts are
+# spelled as words by METH_NOARGS/METH_O, hence "no" and "one".
+#
+# Matching this message is necessary but NOT sufficient: every compiled extension
+# raises it, so an ordinary bug elsewhere in the stack looks identical. Callers
+# must also confirm the frame it came from with _raised_inside_awscrt().
 _NATIVE_ARITY_ERROR = re.compile(
-    r"takes (?:exactly |at most |at least )?\d+ arguments? \(\d+ given\)"
+    r"takes (?:exactly |at most |at least )?(?:\d+|no|one) arguments? \(\d+ given\)"
+    r"|expected (?:exactly |at most |at least )?\d+ arguments?, got \d+"
 )
+
+
+def _raised_inside_awscrt(err: BaseException) -> bool:
+    """Report whether any frame in err's traceback belongs to the awscrt package.
+
+    Walks the raw traceback rather than using traceback.extract_tb, which reads the
+    source files off disk through linecache -- unwanted work on a failure path.
+    """
+    tb = err.__traceback__
+    while tb is not None:
+        parts = tb.tb_frame.f_code.co_filename.replace("\\", "/").split("/")
+        if "awscrt" in parts:
+            return True
+        tb = tb.tb_next
+    return False
 
 
 def is_awscrt_straddle_error(err: BaseException) -> bool:
@@ -44,8 +65,10 @@ def is_awscrt_straddle_error(err: BaseException) -> bool:
     the two halves meet inside connect().
 
     Two ways that surfaces, both from awscrt's IoT usage-metrics feature:
-      - AttributeError on _certificate_source, a slot only awscrt >=0.35.0's
-        awscrt.io declares but which >=0.35.0's metrics code always reads.
+      - AttributeError on _certificate_source, an attribute the newer awscrt.io
+        sets on ClientTlsContext and the newer metrics code reads back, and which
+        is therefore missing whenever the ClientTlsContext was built by the older
+        awscrt.io still sitting in sys.modules.
       - TypeError on argument count, from the two metrics arguments that awscrt
         0.32.2 added to the native mqtt5_client_new binding.
 
@@ -59,9 +82,20 @@ def is_awscrt_straddle_error(err: BaseException) -> bool:
         message = str(err)
         if isinstance(err, AttributeError) and "_certificate_source" in message:
             return True
-        if isinstance(err, TypeError) and _NATIVE_ARITY_ERROR.search(message):
+        if (
+            isinstance(err, TypeError)
+            and _NATIVE_ARITY_ERROR.search(message)
+            and _raised_inside_awscrt(err)
+        ):
             return True
-        err = err.__cause__ or err.__context__
+        if err.__cause__ is not None:
+            err = err.__cause__
+        elif err.__suppress_context__:
+            # "raise X from None": the context is deliberately hidden, so whatever
+            # is behind it is not what this failure is about.
+            break
+        else:
+            err = err.__context__
     return False
 
 
