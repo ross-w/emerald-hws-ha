@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from pathlib import PurePath
 from typing import Any
 
 from emerald_hws.emeraldhws import EmeraldHWS
@@ -38,14 +39,44 @@ def _raised_inside_awscrt(err: BaseException) -> bool:
 
     Walks the raw traceback rather than using traceback.extract_tb, which reads the
     source files off disk through linecache -- unwanted work on a failure path.
+
+    Frames are identified by module name, falling back to the file path for the rare
+    frame whose globals carry no __name__ (exec'd or embedded code). Missing a real
+    awscrt frame would put setup back into an endless retry loop, so the fallback is
+    worth the extra line.
     """
     tb = err.__traceback__
     while tb is not None:
-        parts = tb.tb_frame.f_code.co_filename.replace("\\", "/").split("/")
-        if "awscrt" in parts:
+        module = tb.tb_frame.f_globals.get("__name__")
+        if module is not None:
+            if module.split(".")[0] == "awscrt":
+                return True
+        elif "awscrt" in PurePath(tb.tb_frame.f_code.co_filename).parts:
             return True
         tb = tb.tb_next
     return False
+
+
+def _exception_chain(err: BaseException) -> Iterator[BaseException]:
+    """Yield err and every exception behind it, outermost first.
+
+    The walk order is: prefer __cause__ ("raise X from Y", an explicit statement of
+    what really went wrong); otherwise stop at a suppressed context ("raise X from
+    None" deliberately hides it); otherwise follow __context__, the error that was
+    being handled when this one was raised. A chain that loops back on itself ends
+    the walk. The caller holds a reference to the head throughout, so no link can be
+    collected mid-walk and have its id() reused.
+    """
+    seen: set[int] = set()
+    while err is not None and id(err) not in seen:
+        seen.add(id(err))
+        yield err
+        if err.__cause__ is not None:
+            err = err.__cause__
+        elif err.__suppress_context__:
+            return
+        else:
+            err = err.__context__
 
 
 def is_awscrt_straddle_error(err: BaseException) -> bool:
@@ -76,26 +107,16 @@ def is_awscrt_straddle_error(err: BaseException) -> bool:
     of the process, so only restarting Home Assistant can clear it -- which is why
     this is reported as a permanent error rather than left to HA's retry backoff.
     """
-    seen: set[int] = set()
-    while err is not None and id(err) not in seen:
-        seen.add(id(err))
-        message = str(err)
-        if isinstance(err, AttributeError) and "_certificate_source" in message:
+    for link in _exception_chain(err):
+        message = str(link)
+        if isinstance(link, AttributeError) and "_certificate_source" in message:
             return True
         if (
-            isinstance(err, TypeError)
+            isinstance(link, TypeError)
             and _NATIVE_ARITY_ERROR.search(message)
-            and _raised_inside_awscrt(err)
+            and _raised_inside_awscrt(link)
         ):
             return True
-        if err.__cause__ is not None:
-            err = err.__cause__
-        elif err.__suppress_context__:
-            # "raise X from None": the context is deliberately hidden, so whatever
-            # is behind it is not what this failure is about.
-            break
-        else:
-            err = err.__context__
     return False
 
 
