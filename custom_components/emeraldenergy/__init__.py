@@ -121,7 +121,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "Emerald HWS setup failed after the connection was established; "
             "disconnecting so the retry does not leave MQTT threads behind"
         )
-        hass.data[DOMAIN].pop(entry.entry_id, None)
+        # Nothing in this block may raise: hass.data[DOMAIN] is set up above, but a
+        # subscript here would mask the real failure if that ever stopped holding.
+        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
         try:
             await hass.async_add_executor_job(emerald_hws_instance.disconnect)
         except Exception:
