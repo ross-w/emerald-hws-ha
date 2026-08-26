@@ -6,6 +6,7 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
+import requests
 import voluptuous as vol
 
 from homeassistant import config_entries
@@ -54,13 +55,21 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
-    if not await hass.async_add_executor_job(_create_and_login, data):
+    try:
+        logged_in = await hass.async_add_executor_job(_create_and_login, data)
+    except requests.exceptions.RequestException as err:
+        # emerald_hws makes the sign-in request with plain requests calls and lets
+        # network failures (DNS, timeout, connection refused) propagate as-is,
+        # rather than wrapping them -- so this is the only place that
+        # distinguishes "can't reach the Emerald API" from "reached it, bad
+        # credentials".
+        raise CannotConnect from err
+    except Exception as err:
+        if str(err) == "Failed to log into Emerald API with supplied credentials":
+            raise InvalidAuth from err
+        raise
+    if not logged_in:
         raise InvalidAuth
-
-    # If you cannot connect:
-    # throw CannotConnect
-    # If the authentication is wrong:
-    # InvalidAuth
 
     # Return info that you want to store in the config entry.
     return {"title": "Emerald HWS"}
