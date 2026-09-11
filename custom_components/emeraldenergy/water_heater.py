@@ -19,12 +19,14 @@ from homeassistant.const import (
     PRECISION_WHOLE,
     UnitOfTemperature,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import (
     DOMAIN,
 )
+from .helpers import signal_update
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,14 +78,13 @@ async def async_setup_entry(
         return False
 
     emerald_hws_instance = entry_data["instance"]
-    callback_dispatcher = entry_data["dispatcher"]
 
     # Fetch the list of hot water systems (UUIDs)
     hot_water_systems = await hass.async_add_executor_job(emerald_hws_instance.listHWS)
 
     # Create water heater entities for each hot water system
     water_heaters = [
-        EmeraldWaterHeater(hass, emerald_hws_instance, hws_uuid, callback_dispatcher)
+        EmeraldWaterHeater(hass, emerald_hws_instance, hws_uuid, config_entry.entry_id)
         for hws_uuid in hot_water_systems
     ]
 
@@ -96,12 +97,12 @@ async def async_setup_entry(
 class EmeraldWaterHeater(WaterHeaterEntity):
     """Representation of a water heater."""
 
-    def __init__(self, hass, emerald_hws_instance, hws_uuid, callback_dispatcher):
+    def __init__(self, hass, emerald_hws_instance, hws_uuid, entry_id):
         """Initialize the water heater."""
         self._emerald_hws = emerald_hws_instance
         self._hass = hass
         self._hws_uuid = hws_uuid
-        self._callback_dispatcher = callback_dispatcher
+        self._entry_id = entry_id
         gi = emerald_hws_instance.getInfo(hws_uuid)
         status = emerald_hws_instance.getFullStatus(hws_uuid)
         self._serial_number = gi.get("serial_number")
@@ -120,8 +121,6 @@ class EmeraldWaterHeater(WaterHeaterEntity):
         self._is_heating = emerald_hws_instance.isHeating(hws_uuid)
         self._attr_icon = "mdi:water-boiler"
         self._attr_precision = PRECISION_WHOLE
-        # Register with the callback dispatcher instead of directly with the API
-        callback_dispatcher.register_callback(self.update_callback)
 
     @property
     def supported_features(self) -> int:
@@ -233,21 +232,24 @@ class EmeraldWaterHeater(WaterHeaterEntity):
             _call_hws, "turn off", self._emerald_hws.turnOff, self._hws_uuid
         )
 
-    def update_callback(self):
-        """Schedules an update within HASS (called from the module's thread)."""
-        _LOGGER.info("emeraldhws: callback called")
-        if self.hass is None:
-            # The emerald_hws MQTT thread can fire callbacks before the entity
-            # is added to HASS (or after removal). schedule_update_ha_state is
-            # thread-safe, but with self.hass is None it would raise
-            # "'NoneType' object has no attribute 'create_task'".
-            _LOGGER.debug(
-                "Dropping callback for %s; hass not set (entity not added yet "
-                "or already removed)",
-                self._name,
+    async def async_added_to_hass(self) -> None:
+        """Connect to the shared dispatcher signal for this config entry."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, signal_update(self._entry_id), self._handle_update
             )
-            return
-        self.schedule_update_ha_state(True)
+        )
+
+    @callback
+    def _handle_update(self) -> None:
+        """Schedule a state update when the dispatcher signal fires.
+
+        dispatcher_send hands this to hass.loop.call_soon_threadsafe, so this
+        always runs on the event loop, not the emerald_hws MQTT thread -- no
+        lock or hass-is-None guard needed, unlike the old CallbackDispatcher.
+        """
+        self.async_schedule_update_ha_state(True)
 
     def update(self):
         """Update with values from HWS."""
@@ -265,9 +267,3 @@ class EmeraldWaterHeater(WaterHeaterEntity):
     async def async_update(self) -> None:
         """Update the water heater state."""
         await self._hass.async_add_executor_job(self.update)
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Clean up when entity is removed from Home Assistant."""
-        # Unregister from callback dispatcher
-        self._callback_dispatcher.unregister_callback(self.update_callback)
-        await super().async_will_remove_from_hass()

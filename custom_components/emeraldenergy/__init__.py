@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
-import threading
 from collections.abc import Mapping
+from functools import partial
 from typing import Any
 
 from emerald_hws.emeraldhws import EmeraldHWS
@@ -12,66 +12,16 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
+from homeassistant.helpers.dispatcher import dispatcher_send
 
 from .const import DOMAIN
-from .helpers import create_hws, is_awscrt_straddle_error
+from .helpers import create_hws, is_awscrt_straddle_error, signal_update
 
 _LOGGER = logging.getLogger(__name__)
 
 # TODO List the platforms that you want to support.
 # For your initial PR, limit it to 1 platform.
 PLATFORMS: list[Platform] = [Platform.WATER_HEATER, Platform.SENSOR]
-
-
-class CallbackDispatcher:
-    """Dispatcher to handle multiple callbacks for the same Emerald HWS instance."""
-
-    def __init__(self):
-        """Initialize the callback dispatcher."""
-        self._callbacks = []
-        # Guards _callbacks: register/unregister run on the event-loop thread,
-        # dispatch() runs on the emerald_hws MQTT thread. Without this, list
-        # mutation and the dispatch snapshot below race.
-        self._lock = threading.Lock()
-
-    def register_callback(self, callback):
-        """Register a callback function."""
-        with self._lock:
-            if callback in self._callbacks:
-                return
-            self._callbacks.append(callback)
-            count = len(self._callbacks)
-        _LOGGER.debug(f"Registered callback. Total callbacks: {count}")
-
-    def unregister_callback(self, callback):
-        """Unregister a callback function."""
-        with self._lock:
-            if callback not in self._callbacks:
-                return
-            self._callbacks.remove(callback)
-            count = len(self._callbacks)
-        _LOGGER.debug(f"Unregistered callback. Total callbacks: {count}")
-
-    def dispatch(self):
-        """Dispatch the callback to all registered listeners."""
-        # Snapshot under the lock so this can't race register/unregister. A
-        # callback unregistered right after the snapshot is taken still fires
-        # once more -- holding the lock across the callback() calls below would
-        # close that too, but callback() runs into entity code that can call
-        # back into hass, so holding a lock across it risks deadlocking with
-        # the event loop thread. That residual window is accepted, not fixed.
-        with self._lock:
-            callbacks = list(self._callbacks)
-        _LOGGER.debug(f"Dispatching callback to {len(callbacks)} listeners")
-        for callback in callbacks:
-            try:
-                callback()
-            except Exception:
-                _LOGGER.exception("Error in callback %r", callback)
-
-    def __call__(self):
-        """Make the dispatcher callable."""
-        self.dispatch()
 
 
 def _create_and_connect(config: Mapping[str, Any]) -> EmeraldHWS:
@@ -117,18 +67,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Past this point the instance holds a live MQTT connection with its own threads
     # and timers, so anything that fails has to hand it back before HA retries setup.
     try:
-        # Create and store callback dispatcher for this instance
-        callback_dispatcher = CallbackDispatcher()
-        emerald_hws_instance.replaceCallback(callback_dispatcher)
-
-        # Store both the instance and dispatcher for platforms to access
-        hass.data[DOMAIN][entry.entry_id] = {
-            "instance": emerald_hws_instance,
-            "dispatcher": callback_dispatcher,
-        }
-        _LOGGER.info(
-            "Emerald HWS API instance and callback dispatcher created and stored"
+        # dispatcher_send is hass.loop.call_soon_threadsafe(...) under the hood,
+        # so it's safe to call from the emerald_hws MQTT thread; delivery to
+        # entities' @callback listeners then runs inline on the event loop.
+        emerald_hws_instance.replaceCallback(
+            partial(dispatcher_send, hass, signal_update(entry.entry_id))
         )
+
+        # Store the instance for platforms to access
+        hass.data[DOMAIN][entry.entry_id] = {"instance": emerald_hws_instance}
+        _LOGGER.info("Emerald HWS API instance created and stored")
 
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except BaseException:

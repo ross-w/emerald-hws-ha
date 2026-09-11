@@ -16,6 +16,7 @@ from .const import (
     CONF_USERNAME,
     DEFAULT_CONNECTION_TIMEOUT,
     DEFAULT_HEALTH_CHECK,
+    DOMAIN,
 )
 
 
@@ -118,6 +119,11 @@ def is_awscrt_straddle_error(err: BaseException) -> bool:
         ):
             return True
     return False
+
+
+def signal_update(entry_id: str) -> str:
+    """Return the dispatcher signal name for entities of a given config entry."""
+    return f"{DOMAIN}_{entry_id}_update"
 
 
 def create_hws(config: Mapping[str, Any]) -> EmeraldHWS:
