@@ -119,6 +119,8 @@ class EmeraldWaterHeater(WaterHeaterEntity):
             STATE_OFF,
         ]
         self._is_heating = emerald_hws_instance.isHeating(hws_uuid)
+        # Unrecognised modes already warned about; see modeToOpState.
+        self._warned_modes = set()
         self._attr_icon = "mdi:water-boiler"
         self._attr_precision = PRECISION_WHOLE
 
@@ -196,7 +198,12 @@ class EmeraldWaterHeater(WaterHeaterEntity):
         # allows str | None), which is honest about not knowing the mode.
         # Guessing a real operation here would let a user act on a mode the
         # unit may not actually be in.
-        _LOGGER.warning("emeraldhws: unknown mode %r for %s", mode, self._name)
+        if mode not in self._warned_modes:
+            # current_operation reads this on every state write and every poll,
+            # so warning unconditionally would repeat for as long as the unit
+            # stays in the mode. Once per distinct value is enough to diagnose.
+            self._warned_modes.add(mode)
+            _LOGGER.warning("emeraldhws: unknown mode %r for %s", mode, self._name)
         return None
 
     def set_operation_mode(self, operation_mode: str) -> None:
