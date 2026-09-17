@@ -19,6 +19,7 @@ from .const import (
     DOMAIN,
     CONF_ENABLE_ENERGY_MONITORING,
 )
+from .helpers import CallbackDrivenEntityMixin, device_info_for
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ async def async_setup_entry(
     return True
 
 
-class EmeraldEnergySensor(SensorEntity):
+class EmeraldEnergySensor(CallbackDrivenEntityMixin, SensorEntity):
     """Representation of an Emerald HWS energy usage sensor."""
 
     def __init__(
@@ -101,13 +102,9 @@ class EmeraldEnergySensor(SensorEntity):
         self._attr_unique_id = f"{DOMAIN}_{hws_uuid}_daily_energy"
 
         # Set up device info for proper grouping with water heater
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, hws_uuid)},
-            "name": f"{self._brand} {self._serial_number}",
-            "manufacturer": self._brand,
-            "model": "Hot Water System",
-            "serial_number": self._serial_number,
-        }
+        self._attr_device_info = device_info_for(
+            hws_uuid, self._brand, self._serial_number
+        )
 
         # Register for updates with callback dispatcher
         callback_dispatcher.register_callback(self.update_callback)
@@ -119,22 +116,6 @@ class EmeraldEnergySensor(SensorEntity):
     def last_reset(self):
         """Return the time when the sensor was last reset (midnight)."""
         return self._last_reset
-
-    def update_callback(self):
-        """Schedules an update within HASS when data changes (module thread)."""
-        _LOGGER.debug(f"Energy sensor callback for {self._attr_name}")
-        if self.hass is None:
-            # The emerald_hws MQTT thread can fire callbacks before the entity
-            # is added to HASS (or after removal). schedule_update_ha_state is
-            # thread-safe, but with self.hass is None it would raise
-            # "'NoneType' object has no attribute 'create_task'".
-            _LOGGER.debug(
-                "Dropping callback for %s; hass not set (entity not added yet "
-                "or already removed)",
-                self._attr_name,
-            )
-            return
-        self.schedule_update_ha_state(True)
 
     def update_energy_value(self):
         """Update the energy value from the API."""
@@ -163,13 +144,3 @@ class EmeraldEnergySensor(SensorEntity):
         """Update the sensor state."""
         _LOGGER.debug(f"Updating energy sensor {self._attr_name}")
         self.update_energy_value()
-
-    async def async_update(self) -> None:
-        """Update the sensor state asynchronously."""
-        await self._hass.async_add_executor_job(self.update)
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Clean up when entity is removed from Home Assistant."""
-        # Unregister from callback dispatcher
-        self._callback_dispatcher.unregister_callback(self.update_callback)
-        await super().async_will_remove_from_hass()
