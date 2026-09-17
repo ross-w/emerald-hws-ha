@@ -7,14 +7,16 @@ from collections.abc import Mapping
 from functools import partial
 from typing import Any
 
+from emerald_hws import EmeraldAuthError
 from emerald_hws.emeraldhws import EmeraldHWS
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import dispatcher_send
 
-from .const import DOMAIN
+from .const import CONF_USERNAME, DOMAIN
 from .helpers import create_hws, is_awscrt_straddle_error, signal_update
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,6 +24,11 @@ _LOGGER = logging.getLogger(__name__)
 # TODO List the platforms that you want to support.
 # For your initial PR, limit it to 1 platform.
 PLATFORMS: list[Platform] = [Platform.WATER_HEATER, Platform.SENSOR]
+
+
+def _auth_issue_id(entry: ConfigEntry) -> str:
+    """Return the repair issue id for a rejected sign-in on this entry."""
+    return f"auth_failed_{entry.entry_id}"
 
 
 def _create_and_connect(config: Mapping[str, Any]) -> EmeraldHWS:
@@ -44,6 +51,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         emerald_hws_instance = await hass.async_add_executor_job(
             _create_and_connect, entry.data
         )
+    except EmeraldAuthError as err:
+        # Retried, not failed permanently: Emerald has refused sign-in during
+        # outages with valid credentials, and ConfigEntryAuthFailed would stop the
+        # entry and ask every affected user for new credentials each time that
+        # happened. A repair issue gets the user's attention without giving up on
+        # the retry, and is cleared again by the next successful setup.
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            _auth_issue_id(entry),
+            is_fixable=False,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key="auth_failed",
+            translation_placeholders={
+                "account": entry.data.get(CONF_USERNAME, ""),
+                "error": str(err),
+            },
+        )
+        raise ConfigEntryNotReady(
+            f"Emerald refused the stored credentials ({err}). This is usually a "
+            "temporary problem at their end and setup will keep retrying; if you "
+            "have changed your Emerald password, update it with Reconfigure on "
+            "the integration."
+        ) from err
     except Exception as err:
         # emerald_hws raises bare Exceptions, and its awsiotsdk/awscrt stack can fail
         # in ways only the traceback identifies, so log the full trace rather than
@@ -63,6 +94,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady(
             f"Failed to connect to the Emerald cloud: {err}"
         ) from err
+
+    # Sign-in demonstrably works, so clear a rejection raised by an earlier attempt:
+    # an Emerald-side outage resolves itself without the user touching anything.
+    ir.async_delete_issue(hass, DOMAIN, _auth_issue_id(entry))
 
     # Past this point the instance holds a live MQTT connection with its own threads
     # and timers, so anything that fails has to hand it back before HA retries setup.
@@ -104,6 +139,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise
 
     return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Clean up state that outlives the config entry.
+
+    Called even for an entry that never loaded, which is exactly the one that may
+    have left a repair issue behind.
+    """
+    ir.async_delete_issue(hass, DOMAIN, _auth_issue_id(entry))
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
