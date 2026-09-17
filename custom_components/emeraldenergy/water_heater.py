@@ -104,9 +104,22 @@ class EmeraldWaterHeater(WaterHeaterEntity):
         self._callback_dispatcher = callback_dispatcher
         gi = emerald_hws_instance.getInfo(hws_uuid)
         status = emerald_hws_instance.getFullStatus(hws_uuid)
-        self._serial_number = gi.get("serial_number")
-        self._brand = gi.get("brand")
+        # Fall back rather than leaving these None: they land in the device
+        # registry, which is last-write-wins across this entity and the energy
+        # sensor sharing the same device -- a None from either would blank out
+        # a value the other successfully set.
+        self._serial_number = gi.get("serial_number") or hws_uuid
+        self._brand = gi.get("brand") or "Emerald"
         self._name = f"{self._brand} {self._serial_number}"
+        # Same identifiers as sensor.py's device_info so both entities group
+        # under one device instead of two.
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, hws_uuid)},
+            "name": self._name,
+            "manufacturer": self._brand,
+            "model": "Hot Water System",
+            "serial_number": self._serial_number,
+        }
         self._current_temperature = status.get("last_state").get("temp_current")
         self._target_temperature = status.get("last_state").get("temp_set")
         self._running = emerald_hws_instance.isOn(hws_uuid)
