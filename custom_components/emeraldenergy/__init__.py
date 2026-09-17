@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from functools import partial
 from typing import Any
 
 from emerald_hws.emeraldhws import EmeraldHWS
@@ -11,52 +12,16 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
+from homeassistant.helpers.dispatcher import dispatcher_send
 
 from .const import DOMAIN
-from .helpers import create_hws, is_awscrt_straddle_error
+from .helpers import create_hws, is_awscrt_straddle_error, signal_update
 
 _LOGGER = logging.getLogger(__name__)
 
 # TODO List the platforms that you want to support.
 # For your initial PR, limit it to 1 platform.
 PLATFORMS: list[Platform] = [Platform.WATER_HEATER, Platform.SENSOR]
-
-
-class CallbackDispatcher:
-    """Dispatcher to handle multiple callbacks for the same Emerald HWS instance."""
-
-    def __init__(self):
-        """Initialize the callback dispatcher."""
-        self._callbacks = []
-
-    def register_callback(self, callback):
-        """Register a callback function."""
-        if callback not in self._callbacks:
-            self._callbacks.append(callback)
-            _LOGGER.debug(
-                f"Registered callback. Total callbacks: {len(self._callbacks)}"
-            )
-
-    def unregister_callback(self, callback):
-        """Unregister a callback function."""
-        if callback in self._callbacks:
-            self._callbacks.remove(callback)
-            _LOGGER.debug(
-                f"Unregistered callback. Total callbacks: {len(self._callbacks)}"
-            )
-
-    def dispatch(self):
-        """Dispatch the callback to all registered listeners."""
-        _LOGGER.debug(f"Dispatching callback to {len(self._callbacks)} listeners")
-        for callback in self._callbacks:
-            try:
-                callback()
-            except Exception:
-                _LOGGER.exception("Error in callback %r", callback)
-
-    def __call__(self):
-        """Make the dispatcher callable."""
-        self.dispatch()
 
 
 def _create_and_connect(config: Mapping[str, Any]) -> EmeraldHWS:
@@ -102,18 +67,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Past this point the instance holds a live MQTT connection with its own threads
     # and timers, so anything that fails has to hand it back before HA retries setup.
     try:
-        # Create and store callback dispatcher for this instance
-        callback_dispatcher = CallbackDispatcher()
-        emerald_hws_instance.replaceCallback(callback_dispatcher)
-
-        # Store both the instance and dispatcher for platforms to access
-        hass.data[DOMAIN][entry.entry_id] = {
-            "instance": emerald_hws_instance,
-            "dispatcher": callback_dispatcher,
-        }
-        _LOGGER.info(
-            "Emerald HWS API instance and callback dispatcher created and stored"
+        # dispatcher_send is hass.loop.call_soon_threadsafe(...) under the hood,
+        # so it's safe to call from the emerald_hws MQTT thread; delivery to
+        # entities' @callback listeners then runs inline on the event loop.
+        emerald_hws_instance.replaceCallback(
+            partial(dispatcher_send, hass, signal_update(entry.entry_id))
         )
+
+        # Store the instance for platforms to access
+        hass.data[DOMAIN][entry.entry_id] = {"instance": emerald_hws_instance}
+        _LOGGER.info("Emerald HWS API instance created and stored")
 
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except BaseException:

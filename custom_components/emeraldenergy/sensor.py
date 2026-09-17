@@ -12,13 +12,15 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import UnitOfEnergy
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from emerald_hws.emeraldhws import EmeraldHWS
 
 from .const import (
     DOMAIN,
     CONF_ENABLE_ENERGY_MONITORING,
 )
+from .helpers import signal_update
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,7 +43,6 @@ async def async_setup_entry(
         return False
 
     emerald_hws_instance = entry_data["instance"]
-    callback_dispatcher = entry_data["dispatcher"]
 
     sensors = []
     # Fetch the list of hot water systems (UUIDs)
@@ -50,7 +51,7 @@ async def async_setup_entry(
     # Create energy sensors for each hot water system
     for hws_uuid in hot_water_systems:
         sensor = EmeraldEnergySensor(
-            hass, emerald_hws_instance, hws_uuid, callback_dispatcher
+            hass, emerald_hws_instance, hws_uuid, config_entry.entry_id
         )
         sensors.append(sensor)
 
@@ -70,13 +71,13 @@ class EmeraldEnergySensor(SensorEntity):
         hass: HomeAssistant,
         emerald_hws_instance: EmeraldHWS,
         hws_uuid: str,
-        callback_dispatcher,
+        entry_id: str,
     ):
         """Initialize the energy sensor."""
         self._hass = hass
         self._emerald_hws = emerald_hws_instance
         self._hws_uuid = hws_uuid
-        self._callback_dispatcher = callback_dispatcher
+        self._entry_id = entry_id
         self._attr_name = None
         self._attr_unique_id = None
         self._attr_native_value = None
@@ -109,9 +110,6 @@ class EmeraldEnergySensor(SensorEntity):
             "serial_number": self._serial_number,
         }
 
-        # Register for updates with callback dispatcher
-        callback_dispatcher.register_callback(self.update_callback)
-
         # Initialize energy value
         self.update_energy_value()
 
@@ -120,21 +118,24 @@ class EmeraldEnergySensor(SensorEntity):
         """Return the time when the sensor was last reset (midnight)."""
         return self._last_reset
 
-    def update_callback(self):
-        """Schedules an update within HASS when data changes (module thread)."""
-        _LOGGER.debug(f"Energy sensor callback for {self._attr_name}")
-        if self.hass is None:
-            # The emerald_hws MQTT thread can fire callbacks before the entity
-            # is added to HASS (or after removal). schedule_update_ha_state is
-            # thread-safe, but with self.hass is None it would raise
-            # "'NoneType' object has no attribute 'create_task'".
-            _LOGGER.debug(
-                "Dropping callback for %s; hass not set (entity not added yet "
-                "or already removed)",
-                self._attr_name,
+    async def async_added_to_hass(self) -> None:
+        """Connect to the shared dispatcher signal for this config entry."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, signal_update(self._entry_id), self._handle_update
             )
-            return
-        self.schedule_update_ha_state(True)
+        )
+
+    @callback
+    def _handle_update(self) -> None:
+        """Schedule a state update when the dispatcher signal fires.
+
+        dispatcher_send hands this to hass.loop.call_soon_threadsafe, so this
+        always runs on the event loop, not the emerald_hws MQTT thread -- no
+        lock or hass-is-None guard needed, unlike the old CallbackDispatcher.
+        """
+        self.async_schedule_update_ha_state(True)
 
     def update_energy_value(self):
         """Update the energy value from the API."""
@@ -167,9 +168,3 @@ class EmeraldEnergySensor(SensorEntity):
     async def async_update(self) -> None:
         """Update the sensor state asynchronously."""
         await self._hass.async_add_executor_job(self.update)
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Clean up when entity is removed from Home Assistant."""
-        # Unregister from callback dispatcher
-        self._callback_dispatcher.unregister_callback(self.update_callback)
-        await super().async_will_remove_from_hass()
