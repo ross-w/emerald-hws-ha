@@ -1,11 +1,13 @@
 {
     "config": {
         "abort": {
-            "already_configured": "Device is already configured"
+            "already_configured": "Device is already configured",
+            "reconfigure_successful": "Reconfiguration was successful"
         },
         "error": {
             "cannot_connect": "Failed to connect",
             "invalid_auth": "Invalid authentication",
+            "account_mismatch": "This does not match the account this integration was set up with.",
             "unknown": "Unexpected error"
         },
         "step": {
@@ -14,9 +16,27 @@
                     "password": "Password for Emerald app",
                     "username": "Username for Emerald app",
                     "connection_timeout": "Connection timeout in minutes (default: 720)",
-                    "health_check": "Health check interval in minutes (default: 10)"
+                    "health_check": "Health check interval in minutes (default: 10)",
+                    "enable_energy_monitoring": "Create energy usage sensors"
+                }
+            },
+            "reconfigure": {
+                "title": "Update your Emerald account",
+                "description": "Re-enter your Emerald app password. The username cannot be changed here - remove and re-add the integration to use a different account.",
+                "data": {
+                    "password": "Password for Emerald app",
+                    "username": "Username for Emerald app",
+                    "connection_timeout": "Connection timeout in minutes (default: 720)",
+                    "health_check": "Health check interval in minutes (default: 10)",
+                    "enable_energy_monitoring": "Create energy usage sensors"
                 }
             }
+        }
+    },
+    "issues": {
+        "auth_failed": {
+            "title": "Emerald rejected the saved credentials",
+            "description": "Emerald refused the credentials saved for {account} ({error}).\n\nThis is often a temporary problem at Emerald's end. Home Assistant keeps retrying, and this message clears itself once sign-in succeeds again.\n\nIf you have changed your Emerald password, open the Emerald Hot Water System integration, choose Reconfigure, and enter the new one."
         }
     }
 }
