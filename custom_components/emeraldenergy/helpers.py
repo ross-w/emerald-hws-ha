@@ -9,6 +9,8 @@ from pathlib import PurePath
 from typing import Any
 
 from emerald_hws.emeraldhws import EmeraldHWS
+from homeassistant.core import callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import (
     CONF_CONNECTION_TIMEOUT,
@@ -124,10 +126,16 @@ def is_awscrt_straddle_error(err: BaseException) -> bool:
     return False
 
 
+def signal_update(entry_id: str) -> str:
+    """Return the dispatcher signal name for entities of a given config entry."""
+    return f"{DOMAIN}_{entry_id}_update"
+
+
 def device_info_for(hws_uuid: str, brand: str, serial_number: str) -> dict[str, Any]:
     """Build the shared device_info dict for one HWS.
 
-    Same identifiers on both entities make them group under one device in HA.
+    Same identifiers on every entity for a given HWS make them group under
+    one device in HA.
     """
     return {
         "identifiers": {(DOMAIN, hws_uuid)},
@@ -139,38 +147,36 @@ def device_info_for(hws_uuid: str, brand: str, serial_number: str) -> dict[str, 
 
 
 class CallbackDrivenEntityMixin:
-    """Lifecycle shared by every entity registered with a CallbackDispatcher.
+    """Lifecycle shared by every entity driven by the emerald_hws MQTT callback.
 
     Both entity classes in sensor.py/water_heater.py reimplemented this
     identically; the only thing that actually differs between them is what
     update() does. List this mixin first in the entity's bases and set
-    self._hass/self._callback_dispatcher in __init__ as usual.
+    self._hass/self._entry_id in __init__ as usual.
     """
 
-    def update_callback(self) -> None:
-        """Schedule a state update when the dispatcher fires (module thread)."""
-        _LOGGER.debug("Callback for %s", self.name)
-        if self.hass is None:
-            # The emerald_hws MQTT thread can fire callbacks before the entity
-            # is added to HASS (or after removal). schedule_update_ha_state is
-            # thread-safe, but with self.hass is None it would raise
-            # "'NoneType' object has no attribute 'create_task'".
-            _LOGGER.debug(
-                "Dropping callback for %s; hass not set (entity not added yet "
-                "or already removed)",
-                self.name,
+    async def async_added_to_hass(self) -> None:
+        """Connect to the shared dispatcher signal for this config entry."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, signal_update(self._entry_id), self._handle_update
             )
-            return
-        self.schedule_update_ha_state(True)
+        )
+
+    @callback
+    def _handle_update(self) -> None:
+        """Schedule a state update when the dispatcher signal fires.
+
+        dispatcher_send hands this to hass.loop.call_soon_threadsafe, so this
+        always runs on the event loop, not the emerald_hws MQTT thread -- no
+        lock or hass-is-None guard needed, unlike the old CallbackDispatcher.
+        """
+        self.async_schedule_update_ha_state(True)
 
     async def async_update(self) -> None:
         """Update the entity state asynchronously."""
         await self._hass.async_add_executor_job(self.update)
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Clean up when entity is removed from Home Assistant."""
-        self._callback_dispatcher.unregister_callback(self.update_callback)
-        await super().async_will_remove_from_hass()
 
 
 def create_hws(config: Mapping[str, Any]) -> EmeraldHWS:

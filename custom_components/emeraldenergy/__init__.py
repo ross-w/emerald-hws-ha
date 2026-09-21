@@ -4,16 +4,20 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from functools import partial
 from typing import Any
 
+from emerald_hws import EmeraldAuthError
 from emerald_hws.emeraldhws import EmeraldHWS
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
+from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.dispatcher import dispatcher_send
 
-from .const import DOMAIN
-from .helpers import create_hws, is_awscrt_straddle_error
+from .const import CONF_USERNAME, DOMAIN
+from .helpers import create_hws, is_awscrt_straddle_error, signal_update
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -22,41 +26,9 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [Platform.WATER_HEATER, Platform.SENSOR]
 
 
-class CallbackDispatcher:
-    """Dispatcher to handle multiple callbacks for the same Emerald HWS instance."""
-
-    def __init__(self):
-        """Initialize the callback dispatcher."""
-        self._callbacks = []
-
-    def register_callback(self, callback):
-        """Register a callback function."""
-        if callback not in self._callbacks:
-            self._callbacks.append(callback)
-            _LOGGER.debug(
-                f"Registered callback. Total callbacks: {len(self._callbacks)}"
-            )
-
-    def unregister_callback(self, callback):
-        """Unregister a callback function."""
-        if callback in self._callbacks:
-            self._callbacks.remove(callback)
-            _LOGGER.debug(
-                f"Unregistered callback. Total callbacks: {len(self._callbacks)}"
-            )
-
-    def dispatch(self):
-        """Dispatch the callback to all registered listeners."""
-        _LOGGER.debug(f"Dispatching callback to {len(self._callbacks)} listeners")
-        for callback in self._callbacks:
-            try:
-                callback()
-            except Exception:
-                _LOGGER.exception("Error in callback %r", callback)
-
-    def __call__(self):
-        """Make the dispatcher callable."""
-        self.dispatch()
+def _auth_issue_id(entry: ConfigEntry) -> str:
+    """Return the repair issue id for a rejected sign-in on this entry."""
+    return f"auth_failed_{entry.entry_id}"
 
 
 def _create_and_connect(config: Mapping[str, Any]) -> EmeraldHWS:
@@ -79,6 +51,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         emerald_hws_instance = await hass.async_add_executor_job(
             _create_and_connect, entry.data
         )
+    except EmeraldAuthError as err:
+        # Retried, not failed permanently: Emerald has refused sign-in during
+        # outages with valid credentials, and ConfigEntryAuthFailed would stop the
+        # entry and ask every affected user for new credentials each time that
+        # happened. A repair issue gets the user's attention without giving up on
+        # the retry, and is cleared again by the next successful setup.
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            _auth_issue_id(entry),
+            is_fixable=False,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key="auth_failed",
+            translation_placeholders={
+                "account": entry.data.get(CONF_USERNAME, ""),
+                "error": str(err),
+            },
+        )
+        raise ConfigEntryNotReady(
+            f"Emerald refused the stored credentials ({err}). This is usually a "
+            "temporary problem at their end and setup will keep retrying; if you "
+            "have changed your Emerald password, update it with Reconfigure on "
+            "the integration."
+        ) from err
     except Exception as err:
         # emerald_hws raises bare Exceptions, and its awsiotsdk/awscrt stack can fail
         # in ways only the traceback identifies, so log the full trace rather than
@@ -99,21 +95,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             f"Failed to connect to the Emerald cloud: {err}"
         ) from err
 
+    # Sign-in demonstrably works, so clear a rejection raised by an earlier attempt:
+    # an Emerald-side outage resolves itself without the user touching anything.
+    ir.async_delete_issue(hass, DOMAIN, _auth_issue_id(entry))
+
     # Past this point the instance holds a live MQTT connection with its own threads
     # and timers, so anything that fails has to hand it back before HA retries setup.
     try:
-        # Create and store callback dispatcher for this instance
-        callback_dispatcher = CallbackDispatcher()
-        emerald_hws_instance.replaceCallback(callback_dispatcher)
-
-        # Store both the instance and dispatcher for platforms to access
-        hass.data[DOMAIN][entry.entry_id] = {
-            "instance": emerald_hws_instance,
-            "dispatcher": callback_dispatcher,
-        }
-        _LOGGER.info(
-            "Emerald HWS API instance and callback dispatcher created and stored"
+        # dispatcher_send is hass.loop.call_soon_threadsafe(...) under the hood,
+        # so it's safe to call from the emerald_hws MQTT thread; delivery to
+        # entities' @callback listeners then runs inline on the event loop.
+        emerald_hws_instance.replaceCallback(
+            partial(dispatcher_send, hass, signal_update(entry.entry_id))
         )
+
+        # Store the instance for platforms to access
+        hass.data[DOMAIN][entry.entry_id] = {"instance": emerald_hws_instance}
+        _LOGGER.info("Emerald HWS API instance created and stored")
 
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except BaseException:
@@ -141,6 +139,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise
 
     return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Clean up state that outlives the config entry.
+
+    Called even for an entry that never loaded, which is exactly the one that may
+    have left a repair issue behind.
+    """
+    ir.async_delete_issue(hass, DOMAIN, _auth_issue_id(entry))
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

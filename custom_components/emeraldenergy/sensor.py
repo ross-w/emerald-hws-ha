@@ -42,7 +42,6 @@ async def async_setup_entry(
         return False
 
     emerald_hws_instance = entry_data["instance"]
-    callback_dispatcher = entry_data["dispatcher"]
 
     sensors = []
     # Fetch the list of hot water systems (UUIDs)
@@ -51,7 +50,7 @@ async def async_setup_entry(
     # Create energy sensors for each hot water system
     for hws_uuid in hot_water_systems:
         sensor = EmeraldEnergySensor(
-            hass, emerald_hws_instance, hws_uuid, callback_dispatcher
+            hass, emerald_hws_instance, hws_uuid, config_entry.entry_id
         )
         sensors.append(sensor)
 
@@ -71,13 +70,13 @@ class EmeraldEnergySensor(CallbackDrivenEntityMixin, SensorEntity):
         hass: HomeAssistant,
         emerald_hws_instance: EmeraldHWS,
         hws_uuid: str,
-        callback_dispatcher,
+        entry_id: str,
     ):
         """Initialize the energy sensor."""
         self._hass = hass
         self._emerald_hws = emerald_hws_instance
         self._hws_uuid = hws_uuid
-        self._callback_dispatcher = callback_dispatcher
+        self._entry_id = entry_id
         self._attr_name = None
         self._attr_unique_id = None
         self._attr_native_value = None
@@ -105,9 +104,6 @@ class EmeraldEnergySensor(CallbackDrivenEntityMixin, SensorEntity):
         self._attr_device_info = device_info_for(
             hws_uuid, self._brand, self._serial_number
         )
-
-        # Register for updates with callback dispatcher
-        callback_dispatcher.register_callback(self.update_callback)
 
         # Initialize energy value
         self.update_energy_value()

@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
+from emerald_hws import EmeraldApiError, EmeraldAuthError, EmeraldConnectionError
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
@@ -40,13 +41,13 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 
-def _create_and_login(config: Mapping[str, Any]) -> bool:
+def _login(config: Mapping[str, Any]) -> None:
     """Build an EmeraldHWS client and check the credentials are accepted.
 
     Blocking, and both halves reach into awsiotsdk/awscrt, so they run as a single
-    executor job rather than two.
+    executor job rather than two. getLoginToken returns True or raises.
     """
-    return bool(create_hws(config).getLoginToken())
+    create_hws(config).getLoginToken()
 
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
@@ -54,13 +55,17 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
-    if not await hass.async_add_executor_job(_create_and_login, data):
-        raise InvalidAuth
-
-    # If you cannot connect:
-    # throw CannotConnect
-    # If the authentication is wrong:
-    # InvalidAuth
+    try:
+        await hass.async_add_executor_job(_login, data)
+    except EmeraldAuthError as err:
+        # Caught before EmeraldApiError, which it subclasses.
+        raise InvalidAuth from err
+    except (EmeraldApiError, EmeraldConnectionError, TimeoutError) as err:
+        # TimeoutError covers EmeraldTimeoutError, which derives from it rather
+        # than from the two above. The steps below turn CannotConnect into a form
+        # error without logging, so this is the only record of the cause.
+        _LOGGER.debug("Could not reach the Emerald API: %s", err)
+        raise CannotConnect from err
 
     # Return info that you want to store in the config entry.
     return {"title": "Emerald HWS"}
@@ -91,6 +96,48 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle reconfiguring an existing entry, e.g. after a password change.
+
+        Setup retries a refused sign-in rather than raising ConfigEntryAuthFailed,
+        so nothing prompts the user to come here; the retry message names it.
+        """
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if user_input[CONF_USERNAME] != entry.data[CONF_USERNAME]:
+                # Any valid Emerald account signs in, so without this the entry
+                # would quietly re-point at a different one and orphan every
+                # entity built from the old account's uuids.
+                errors[CONF_USERNAME] = "account_mismatch"
+            else:
+                try:
+                    await validate_input(self.hass, user_input)
+                except CannotConnect:
+                    errors["base"] = "cannot_connect"
+                except InvalidAuth:
+                    errors["base"] = "invalid_auth"
+                except Exception:  # pylint: disable=broad-except
+                    _LOGGER.exception("Unexpected exception")
+                    errors["base"] = "unknown"
+                else:
+                    return self.async_update_reload_and_abort(
+                        entry, data_updates=user_input
+                    )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                STEP_USER_DATA_SCHEMA,
+                # Everything but the password: that is either still correct, or
+                # the reason they are here.
+                {k: v for k, v in entry.data.items() if k != CONF_PASSWORD},
+            ),
+            errors=errors,
         )
 
 

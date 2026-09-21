@@ -77,14 +77,13 @@ async def async_setup_entry(
         return False
 
     emerald_hws_instance = entry_data["instance"]
-    callback_dispatcher = entry_data["dispatcher"]
 
     # Fetch the list of hot water systems (UUIDs)
     hot_water_systems = await hass.async_add_executor_job(emerald_hws_instance.listHWS)
 
     # Create water heater entities for each hot water system
     water_heaters = [
-        EmeraldWaterHeater(hass, emerald_hws_instance, hws_uuid, callback_dispatcher)
+        EmeraldWaterHeater(hass, emerald_hws_instance, hws_uuid, config_entry.entry_id)
         for hws_uuid in hot_water_systems
     ]
 
@@ -97,12 +96,12 @@ async def async_setup_entry(
 class EmeraldWaterHeater(CallbackDrivenEntityMixin, WaterHeaterEntity):
     """Representation of a water heater."""
 
-    def __init__(self, hass, emerald_hws_instance, hws_uuid, callback_dispatcher):
+    def __init__(self, hass, emerald_hws_instance, hws_uuid, entry_id):
         """Initialize the water heater."""
         self._emerald_hws = emerald_hws_instance
         self._hass = hass
         self._hws_uuid = hws_uuid
-        self._callback_dispatcher = callback_dispatcher
+        self._entry_id = entry_id
         gi = emerald_hws_instance.getInfo(hws_uuid)
         status = emerald_hws_instance.getFullStatus(hws_uuid)
         # Fall back rather than leaving these None: they land in the device
@@ -128,10 +127,10 @@ class EmeraldWaterHeater(CallbackDrivenEntityMixin, WaterHeaterEntity):
             STATE_OFF,
         ]
         self._is_heating = emerald_hws_instance.isHeating(hws_uuid)
+        # Unrecognised modes already warned about; see modeToOpState.
+        self._warned_modes = set()
         self._attr_icon = "mdi:water-boiler"
         self._attr_precision = PRECISION_WHOLE
-        # Register with the callback dispatcher instead of directly with the API
-        callback_dispatcher.register_callback(self.update_callback)
 
     @property
     def supported_features(self) -> int:
@@ -203,6 +202,17 @@ class EmeraldWaterHeater(CallbackDrivenEntityMixin, WaterHeaterEntity):
             return STATE_PERFORMANCE
         elif mode == 2:
             return STATE_ECO
+        # None -> HA reports the state as "unknown" (WaterHeaterEntity's state
+        # allows str | None), which is honest about not knowing the mode.
+        # Guessing a real operation here would let a user act on a mode the
+        # unit may not actually be in.
+        if mode not in self._warned_modes:
+            # current_operation reads this on every state write and every poll,
+            # so warning unconditionally would repeat for as long as the unit
+            # stays in the mode. Once per distinct value is enough to diagnose.
+            self._warned_modes.add(mode)
+            _LOGGER.warning("emeraldhws: unknown mode %r for %s", mode, self._name)
+        return None
 
     def set_operation_mode(self, operation_mode: str) -> None:
         """Set the internal state given a HASS state."""
