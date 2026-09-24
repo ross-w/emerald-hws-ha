@@ -74,7 +74,10 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Emerald Hot Water System."""
 
-    VERSION = 1
+    # Bumped for the DEFAULT_HEALTH_CHECK 60->10 migration in __init__.py's
+    # async_migrate_entry. Bump again (and add a version==2 branch there)
+    # for the next entry-data migration.
+    VERSION = 2
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None

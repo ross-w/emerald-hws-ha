@@ -16,7 +16,7 @@
                     "password": "Password for Emerald app",
                     "username": "Username for Emerald app",
                     "connection_timeout": "Connection timeout in minutes (default: 720)",
-                    "health_check": "Health check interval in minutes (default: 60)",
+                    "health_check": "Health check interval in minutes (default: 10)",
                     "enable_energy_monitoring": "Create energy usage sensors"
                 }
             },
@@ -27,7 +27,7 @@
                     "password": "Password for Emerald app",
                     "username": "Username for Emerald app",
                     "connection_timeout": "Connection timeout in minutes (default: 720)",
-                    "health_check": "Health check interval in minutes (default: 60)",
+                    "health_check": "Health check interval in minutes (default: 10)",
                     "enable_energy_monitoring": "Create energy usage sensors"
                 }
             }
