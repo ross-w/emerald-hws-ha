@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterator, Mapping
 from pathlib import PurePath
 from typing import Any
 
 from emerald_hws.emeraldhws import EmeraldHWS
+from homeassistant.core import callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import (
     CONF_CONNECTION_TIMEOUT,
@@ -18,6 +21,8 @@ from .const import (
     DEFAULT_HEALTH_CHECK,
     DOMAIN,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 # A compiled function rejecting its caller's argument count, e.g. "function takes
@@ -124,6 +129,54 @@ def is_awscrt_straddle_error(err: BaseException) -> bool:
 def signal_update(entry_id: str) -> str:
     """Return the dispatcher signal name for entities of a given config entry."""
     return f"{DOMAIN}_{entry_id}_update"
+
+
+def device_info_for(hws_uuid: str, brand: str, serial_number: str) -> dict[str, Any]:
+    """Build the shared device_info dict for one HWS.
+
+    Same identifiers on every entity for a given HWS make them group under
+    one device in HA.
+    """
+    return {
+        "identifiers": {(DOMAIN, hws_uuid)},
+        "name": f"{brand} {serial_number}",
+        "manufacturer": brand,
+        "model": "Hot Water System",
+        "serial_number": serial_number,
+    }
+
+
+class CallbackDrivenEntityMixin:
+    """Lifecycle shared by every entity driven by the emerald_hws MQTT callback.
+
+    Both entity classes in sensor.py/water_heater.py reimplemented this
+    identically; the only thing that actually differs between them is what
+    update() does. List this mixin first in the entity's bases and set
+    self._hass/self._entry_id in __init__ as usual.
+    """
+
+    async def async_added_to_hass(self) -> None:
+        """Connect to the shared dispatcher signal for this config entry."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, signal_update(self._entry_id), self._handle_update
+            )
+        )
+
+    @callback
+    def _handle_update(self) -> None:
+        """Schedule a state update when the dispatcher signal fires.
+
+        dispatcher_send hands this to hass.loop.call_soon_threadsafe, so this
+        always runs on the event loop, not the emerald_hws MQTT thread -- no
+        lock or hass-is-None guard needed, unlike the old CallbackDispatcher.
+        """
+        self.async_schedule_update_ha_state(True)
+
+    async def async_update(self) -> None:
+        """Update the entity state asynchronously."""
+        await self._hass.async_add_executor_job(self.update)
 
 
 def create_hws(config: Mapping[str, Any]) -> EmeraldHWS:

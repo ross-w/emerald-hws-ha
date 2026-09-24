@@ -12,15 +12,14 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import UnitOfEnergy
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.core import HomeAssistant
 from emerald_hws.emeraldhws import EmeraldHWS
 
 from .const import (
     DOMAIN,
     CONF_ENABLE_ENERGY_MONITORING,
 )
-from .helpers import signal_update
+from .helpers import CallbackDrivenEntityMixin, device_info_for
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -63,7 +62,7 @@ async def async_setup_entry(
     return True
 
 
-class EmeraldEnergySensor(SensorEntity):
+class EmeraldEnergySensor(CallbackDrivenEntityMixin, SensorEntity):
     """Representation of an Emerald HWS energy usage sensor."""
 
     def __init__(
@@ -102,13 +101,9 @@ class EmeraldEnergySensor(SensorEntity):
         self._attr_unique_id = f"{DOMAIN}_{hws_uuid}_daily_energy"
 
         # Set up device info for proper grouping with water heater
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, hws_uuid)},
-            "name": f"{self._brand} {self._serial_number}",
-            "manufacturer": self._brand,
-            "model": "Hot Water System",
-            "serial_number": self._serial_number,
-        }
+        self._attr_device_info = device_info_for(
+            hws_uuid, self._brand, self._serial_number
+        )
 
         # Initialize energy value
         self.update_energy_value()
@@ -117,25 +112,6 @@ class EmeraldEnergySensor(SensorEntity):
     def last_reset(self):
         """Return the time when the sensor was last reset (midnight)."""
         return self._last_reset
-
-    async def async_added_to_hass(self) -> None:
-        """Connect to the shared dispatcher signal for this config entry."""
-        await super().async_added_to_hass()
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass, signal_update(self._entry_id), self._handle_update
-            )
-        )
-
-    @callback
-    def _handle_update(self) -> None:
-        """Schedule a state update when the dispatcher signal fires.
-
-        dispatcher_send hands this to hass.loop.call_soon_threadsafe, so this
-        always runs on the event loop, not the emerald_hws MQTT thread -- no
-        lock or hass-is-None guard needed, unlike the old CallbackDispatcher.
-        """
-        self.async_schedule_update_ha_state(True)
 
     def update_energy_value(self):
         """Update the energy value from the API."""
@@ -164,7 +140,3 @@ class EmeraldEnergySensor(SensorEntity):
         """Update the sensor state."""
         _LOGGER.debug(f"Updating energy sensor {self._attr_name}")
         self.update_energy_value()
-
-    async def async_update(self) -> None:
-        """Update the sensor state asynchronously."""
-        await self._hass.async_add_executor_job(self.update)
