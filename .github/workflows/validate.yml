@@ -17,25 +17,38 @@ on:
       - "**.md"
       - "docs/**"
 
+permissions: {}
+
+# hassfest and hacs/action track branches (neither project tags releases) and the
+# real logic runs from floating container images. They are locked in actions.lock
+# and ignored by Dependabot; refresh with `gh actions-lock --relock`.
 jobs:
   hassfest: # https://developers.home-assistant.io/blog/2020/04/16/hassfest
     name: "Hassfest Validation"
     runs-on: "ubuntu-latest"
+    permissions:
+      contents: read
     steps:
       - name: "Checkout the repository"
-        uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" # v7.0.1
+        uses: "actions/checkout@v7.0.1"
+        with:
+          persist-credentials: false
 
       - name: "Run hassfest validation"
-        uses: "home-assistant/actions/hassfest@cd6f3635a740c84d8a14f6121a90068b8ece6bf6" # master
+        uses: "home-assistant/actions/hassfest@master"
 
   hacs: # https://github.com/hacs/action
     name: "HACS Validation"
     runs-on: "ubuntu-latest"
+    permissions:
+      contents: read
     steps:
       - name: "Checkout the repository"
-        uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" # v7.0.1
+        uses: "actions/checkout@v7.0.1"
+        with:
+          persist-credentials: false
 
       - name: "Run HACS validation"
-        uses: "hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa" # main
+        uses: "hacs/action@main"
         with:
           category: "integration"
