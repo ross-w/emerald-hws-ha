@@ -72,8 +72,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady(
             f"Emerald refused the stored credentials ({err}). This is usually a "
             "temporary problem at their end and setup will keep retrying; if you "
-            "have changed your Emerald password, update it with Reconfigure on "
-            "the integration."
+            "have changed your Emerald password or email address, update it with "
+            "Reconfigure on the integration."
         ) from err
     except Exception as err:
         # emerald_hws raises bare Exceptions, and its awsiotsdk/awscrt stack can fail
