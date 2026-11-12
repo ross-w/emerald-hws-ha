@@ -15,7 +15,9 @@ jobs:
       contents: write
     steps:
       - name: "Checkout the repository"
-        uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" # v7.0.1
+        uses: "actions/checkout@v7.0.1"
+        with:
+          persist-credentials: false
 
       - name: "Adjust version number"
         shell: "bash"
@@ -23,15 +25,20 @@ jobs:
           TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
           yq -i -o json '.version=strenv(TAG_NAME)' \
-            "${{ github.workspace }}/custom_components/emeraldenergy/manifest.json"
+            "${GITHUB_WORKSPACE}/custom_components/emeraldenergy/manifest.json"
 
       - name: "ZIP the integration directory"
         shell: "bash"
         run: |
-          cd "${{ github.workspace }}/custom_components/emeraldenergy"
+          cd "${GITHUB_WORKSPACE}/custom_components/emeraldenergy"
           zip emeraldenergy.zip -r ./
 
       - name: "Upload the ZIP file to the release"
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
-        with:
-          files: ${{ github.workspace }}/custom_components/emeraldenergy/emeraldenergy.zip
+        shell: "bash"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload "$TAG_NAME" --repo "$REPO" --clobber \
+            "${GITHUB_WORKSPACE}/custom_components/emeraldenergy/emeraldenergy.zip"
