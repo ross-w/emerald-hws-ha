@@ -161,24 +161,43 @@ class EmeraldWaterHeater(WaterHeaterEntity):
             return self.modeToOpState(self._current_mode)
 
     @property
-    def current_temperature(self) -> float:
+    def native_current_temperature(self) -> float | None:
         """Return the current temperature."""
         return self._current_temperature
 
     @property
-    def target_temperature(self) -> float:
+    def native_target_temperature(self) -> float | None:
         """Return the target temperature."""
         return self._target_temperature
+
+    @property
+    def native_temperature_unit(self) -> str:
+        """Return the temperature unit."""
+        return UnitOfTemperature.CELSIUS
+
+    # Home Assistant before 2026.11 only reads the names below, not the native_
+    # ones above. Newer versions read native_ and log a deprecation warning for a
+    # class overriding these names, unless the same class also defines the native_
+    # names, as this one does. Remove these once hacs.json requires 2026.11+.
+    @property
+    def current_temperature(self) -> float | None:
+        """Return the current temperature (Home Assistant < 2026.11)."""
+        return self.native_current_temperature
+
+    @property
+    def target_temperature(self) -> float | None:
+        """Return the target temperature (Home Assistant < 2026.11)."""
+        return self.native_target_temperature
+
+    @property
+    def temperature_unit(self) -> str:
+        """Return the temperature unit (Home Assistant < 2026.11)."""
+        return self.native_temperature_unit
 
     @property
     def operation_list(self) -> list[str]:
         """Return list of possible operation modes."""
         return self._operation_list
-
-    @property
-    def temperature_unit(self) -> str:
-        """Return the temperature unit."""
-        return UnitOfTemperature.CELSIUS
 
     @property
     def extra_state_attributes(self):
